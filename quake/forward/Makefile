@@ -1,5 +1,5 @@
 # -*- Makefile -*-
-# 
+#
 #
 ifndef WORKDIR
   WORKDIR = $(PWD)/../..
@@ -16,16 +16,16 @@ include $(WORKDIR)/common.mk
 # -DVALIDATION
 # -DHALFSPACE
 # -DBOUNDARY
-SOLVE_CPPFLAGS ?= -DHALFSPACE -DBOUNDARY  
+SOLVE_CPPFLAGS ?= -DHALFSPACE -DBOUNDARY
 
 
-LOADLIBES = $(CVM_DIR)/cvm.o $(OCTOR_LIB) $(ETREE_LIB) 
+LOADLIBES = $(CVM_DIR)/cvm.o $(OCTOR_LIB) $(ETREE_LIB)
 
 #
 # Is vis enabled?
 #
 ifeq (${ENABLE_VIZ},1)
-  VIS_CPPFLAGS ?= -DVISINTERVAL=10 
+  VIS_CPPFLAGS ?= -DVISINTERVAL=10
   VIS_CPPFLAGS += -DVIS -I${VIS_DIR}
   LOADLIBES += $(VIS_LIB) $(JPEG_LIB)
 endif
@@ -33,7 +33,7 @@ endif
 # I/O
 # -DNO_OUTPUT
 # -DUSERCVMDB
-IO_CPPFLAGS ?= -DUSECVMDB 
+IO_CPPFLAGS ?= -DUSECVMDB
 
 
 CPPFLAGS += -I$(ETREE_DIR) -I$(CVM_DIR) -I$(OCTOR_DIR) -I.
@@ -46,10 +46,11 @@ ifeq ($(SYSTEM), BGW)
 endif
 
 #
-# Object modules 
+# Object modules
 #
 PSOLVE_OBJECTS = psolve.o nrutila.o quakesource.o geometrics.o nonlinear.o \
-	commutil.o util.o output.o io_planes.o io_checkpoint.o stiffness.o damping.o quake_util.o timers.o buildings.o meshformatlab.o drm.o 
+	commutil.o util.o output.o io_planes.o io_checkpoint.o stiffness.o damping.o quake_util.o timers.o buildings.o meshformatlab.o drm.o topography.o drm_planewaves.o
+
 
 OBJECTS = qmesh.o q4.o single_query.o ${PSOLVE_OBJECTS}
 
@@ -75,7 +76,7 @@ psolve_output: psolve_output.o
 psolve_output.o: psolve.o
 	cp -f psolve.o psolve_output.o
 
-psolve_debug: psolve_debug.o 
+psolve_debug: psolve_debug.o
 
 psolve_debug.o: psolve.o nrutila.o quakesource.o geometrics.o io_planes.o io_checkpoint.o
 	cp -f psolve.o psolve_debug.o
@@ -89,14 +90,15 @@ single_query: single_query.o q4.o
 
 output.o: output.c output.h psolve.h
 psolve.o: psolve.c psolve.h output.h quakesource.h nonlinear.h io_planes.h \
-          io_checkpoint.h stiffness.h damping.h quake_util.h timers.h buildings.h meshformatlab.h drm.h        
+          io_checkpoint.h stiffness.h damping.h quake_util.h timers.h buildings.h meshformatlab.h drm.h topography.h drm_planewaves.h
+
 quakesource.o: quakesource.c quakesource.h psolve.h
 
 
 all: $(TARGET)
 
 clean:
-	rm -f $(OBJECTS)  core *.o *~ 
+	rm -f $(OBJECTS)  core *.o *~
 
 cleanall:
 	rm -f $(OBJECTS)  $(TARGET) core *~

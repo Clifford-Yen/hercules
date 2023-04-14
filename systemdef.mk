@@ -16,7 +16,36 @@
 -include $(WORKDIR)/user.mk
 
 ifndef SYSTEM
-	SYSTEM = XT5
+	SYSTEM = Stampede
+endif
+
+ifeq ($(SYSTEM), Stampede)
+        CC      = mpicc
+        CXX     = mpicxx
+        LD      = mpicxx
+        CFLAGS  += -DBIGBEN 
+        CC  += -I/opt/apps/intel18/gsl/2.6/include/
+        LDFLAGS += -L/opt/apps/intel18/gsl/2.6/lib/
+        LDFLAGS += -lgsl -lgslcblas
+        #LDFLAGS += 
+        #ifdef IOBUF_INC
+        #    CPPFLAGS += -I${IOBUF_INC}
+        #endif        
+        CPPFLAGS    += -D_USE_FILE_OFFSET64 -D_FILE_OFFSET_BITS=64 -D_USE_LARGEFILE64       
+endif
+ifeq ($(SYSTEM), Frontera)
+        CC	= mpicc
+        CXX     = mpicxx
+        LD	= mpicxx
+        CFLAGS  += -DBIGBEN
+        CC  += -I/opt/apps/intel19/gsl/2.6/include/
+        LDFLAGS += -L/opt/apps/intel19/gsl/2.6/lib/
+        LDFLAGS += -lgsl -lgslcblas
+        #LDFLAGS +=
+        #ifdef IOBUF_INC
+        #    CPPFLAGS += -I${IOBUF_INC}
+        #endif
+		CPPFLAGS    += -D_USE_FILE_OFFSET64 -D_FILE_OFFSET_BITS=64 -D_USE_LARGEFILE64
 endif
 
 ifeq ($(SYSTEM), XT5)
@@ -28,10 +57,20 @@ ifeq ($(SYSTEM), XT5)
         ifdef IOBUF_INC
             CPPFLAGS += -I${IOBUF_INC}
         endif        
-        CPPFLAGS    += -D_USE_FILE_OFFSET64 -D_FILE_OFFSET_BITS=64 -D_USE_LARGEFILE64       
-        
+        CPPFLAGS    += -D_USE_FILE_OFFSET64 -D_FILE_OFFSET_BITS=64 -D_USE_LARGEFILE64
 endif
 
+ifeq ($(SYSTEM), XK7CPU)
+        CC      = cc
+        CXX     = CC
+        LD      = CC
+        CFLAGS  += -DBIGBEN 
+        LDFLAGS += -Wl,-zmuldefs
+        ifdef IOBUF_INC
+            CPPFLAGS += -I${IOBUF_INC}
+        endif        
+        CPPFLAGS    += -D_USE_FILE_OFFSET64 -D_FILE_OFFSET_BITS=64 -D_USE_LARGEFILE64
+endif
 
 ifeq ($(SYSTEM), BGW)
 	MPI_DIR ?= /bgl/BlueLight/ppcfloor/bglsys
@@ -166,9 +205,9 @@ endif
 ifeq ($(SYSTEM), MACBOOK)
 	MPI_DIR      = /usr/
         MPI_INCLUDE  = $(MPI_DIR)/include/openmpi/ompi/mpi/cxx
-        CC           = $(MPI_DIR)/bin/mpicc
-        CXX          = $(MPI_DIR)/bin/mpicxx
-        LD           = $(MPI_DIR)/bin/mpicxx
+        CC           = $(MPI_DIR)/local/bin/mpicc
+        CXX          = $(MPI_DIR)/local/bin/mpicxx
+        LD           = $(MPI_DIR)/local/bin/mpicxx
         CXXFLAGS    += -DMPICH_IGNORE_CXX_SEEK
         CFLAGS      += -Wall
         CPPFLAGS    += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64

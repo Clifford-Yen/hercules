@@ -93,10 +93,17 @@ typedef struct mdata_t mdata_t;
  * Mesh element data fields
  */
 typedef struct edata_t {
-    float edgesize, Vp, Vs, rho, a0_shear, a1_shear, b_shear, g0_shear, g1_shear, a0_kappa, a1_kappa, b_kappa, g0_kappa, g1_kappa;
+    float edgesize, Vp, Vs, rho,
+		  a0_shear, a1_shear, a2_shear,
+		  a0_kappa, a1_kappa, a2_kappa,
+		  g0_shear, g1_shear, g2_shear,
+		  g0_kappa, g1_kappa, g2_kappa,
+		  b_shear, b_kappa, sigma_0;
+    int     topoBkt;
+    int32_t topo_eindex;
+    double  nl_id;
+
 } edata_t;
-
-
 
 /** 3-ary double vector */
 struct fvector_t {
@@ -293,22 +300,25 @@ typedef struct solver_t solver_t;
  * \todo Document this struct.
  */
 struct mysolver_t {
-    e_t* eTable;            /* Element computation-invariant table  */
-    n_t* nTable;            /* Node computation-invariant table     */
+    e_t* eTable;              /* Element computation-invariant table  */
+    n_t* nTable;              /* Node computation-invariant table     */
 
     /* \TODO Explain better what is tm1,2,3 */
-    fvector_t* tm1;         /* Displacements at timestep t - 1      */
-    fvector_t* tm2;         /* Displacements at timestep t - 2      */
-    fvector_t* tm3;         /* Displacements at timestep t - 3      */
-    fvector_t* force;       /* Force accumulation at timestep t     */
+    fvector_t* tm1;           /* Displacements at time-step t - 1      */
+    fvector_t* tm2;           /* Displacements at time-step t - 2      */
+    fvector_t* tm3;           /* Displacements at time-step t - 3      */
+    fvector_t* force;         /* Force accumulation at time-step t     */
 
-    schedule_t* dn_sched;   /* Dangling node communication schedule */
-    schedule_t* an_sched;   /* Anchored node communication schedule */
+    schedule_t* dn_sched;     /* Dangling node communication schedule */
+    schedule_t* an_sched;     /* Anchored node communication schedule */
 
-    fvector_t* conv_shear_1;      /* Approximate Convolution Calculation */
+    fvector_t* conv_shear_1;  /* Approximate convolution Calculation */
     fvector_t* conv_shear_2;
+    fvector_t* conv_shear_3;
+
     fvector_t* conv_kappa_1;
     fvector_t* conv_kappa_2;
+    fvector_t* conv_kappa_3;
 };
 
 typedef struct mysolver_t mysolver_t;
@@ -335,6 +345,9 @@ struct station_t {
     double*    displacementsX;
     double*    displacementsY;
     double*    displacementsZ;
+    double     h; /* dorian: added size edge to compute station«s strains */
+    double     mu;
+    double     lambda;
 
     vector3D_t coords;        /* cartesian */
     vector3D_t localcoords;   /* csi, eta, dzeta in (-1,1) x (-1,1) x (-1,1) */

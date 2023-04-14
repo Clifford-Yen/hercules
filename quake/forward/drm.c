@@ -33,6 +33,7 @@
 #include "timers.h"
 #include "quake_util.h"
 #include "buildings.h"
+#include "damping.h"
 
 
 #define  NONE -1
@@ -54,6 +55,7 @@ static double  theDrmDepth;
 static double  theX_Offset;
 static double  theY_Offset;
 static double  thePart1DeltaT;
+static double  thePart1SimTime;
 static int     theDrmPrintRate;
 static double  theDrmEdgeSize;
 static double  *myDispWrite;
@@ -93,6 +95,9 @@ static fvector_t    *theDrmNodeCoords;
 static fvector_t    *theDrmDisplacements1; // For Part 2 only and current timestep
 static fvector_t    *theDrmDisplacements2; // For Part 2 only and next timestep
 
+static fvector_t    *theDrmDisplacements1_stepm1; // For Part 2 only. Previous timestep
+static fvector_t    *theDrmDisplacements2_stepm1; // For Part 2 only next timestep
+
 static drm_elem_t   *theDrmElem;
 static drm_node_t   *myDrmNodes;
 
@@ -121,7 +126,7 @@ static 	FILE   *drmDisp;
 
 drm_part_t drm_init (int32_t myID, const char *parametersin, noyesflag_t includeBldgs)
 {
-	double double_message[9];
+	double double_message[10];
 	int    int_message[2];
 
 	MPI_Datatype coords_mpi, coordscnt_mpi;
@@ -161,18 +166,20 @@ drm_part_t drm_init (int32_t myID, const char *parametersin, noyesflag_t include
 	double_message[6] = theY_Offset;
 	double_message[7] = theDrmEdgeSize;
 	double_message[8] = thePart1DeltaT;
+	double_message[9] = thePart1SimTime;
 
-	MPI_Bcast(double_message, 9, MPI_DOUBLE, 0, comm_solver);
+	MPI_Bcast(double_message, 10, MPI_DOUBLE, 0, comm_solver);
 
-	theDrmXMin     = double_message[0];
-	theDrmYMin     = double_message[1];
-	theDrmXMax     = double_message[2];
-	theDrmYMax     = double_message[3];
-	theDrmDepth    = double_message[4];
-	theX_Offset    = double_message[5];
-	theY_Offset    = double_message[6];
-	theDrmEdgeSize = double_message[7];
-	thePart1DeltaT = double_message[8];
+	theDrmXMin      = double_message[0];
+	theDrmYMin      = double_message[1];
+	theDrmXMax      = double_message[2];
+	theDrmYMax      = double_message[3];
+	theDrmDepth     = double_message[4];
+	theX_Offset     = double_message[5];
+	theY_Offset     = double_message[6];
+	theDrmEdgeSize  = double_message[7];
+	thePart1DeltaT  = double_message[8];
+	thePart1SimTime = double_message[9];
 
 	broadcast_char_array( theDrmOutputDir, sizeof(theDrmOutputDir), 0,
 			comm_solver );
@@ -223,7 +230,8 @@ int32_t drm_initparameters (const char *parametersin) {
 			drm_edgesize,
 			x_offset,
 			y_offset,
-			part1_delta_t;
+			part1_delta_t,
+			part1_simtime;
 
 	int    drm_print_rate;
 	char   which_drm_part[64],
@@ -240,13 +248,14 @@ int32_t drm_initparameters (const char *parametersin) {
 		return -1;
 	}
 
-	if ((parsetext ( fp, "drm_directory",  's', &drm_output_directory ) != 0) ||
-	    (parsetext ( fp, "which_drm_part", 's', &which_drm_part       ) != 0) ||
-	    (parsetext ( fp, "drm_edgesize",   'd', &drm_edgesize         ) != 0) ||
-	    (parsetext ( fp, "drm_offset_x",   'd', &x_offset             ) != 0) ||
-	    (parsetext ( fp, "drm_offset_y",   'd', &y_offset             ) != 0) ||
-	    (parsetext ( fp, "drm_print_rate", 'i', &drm_print_rate       ) != 0) ||
-	    (parsetext ( fp, "part1_delta_t",  'd', &part1_delta_t        ) != 0) )
+	if ((parsetext ( fp, "drm_directory",         's', &drm_output_directory ) != 0) ||
+	    (parsetext ( fp, "which_drm_part",        's', &which_drm_part       ) != 0) ||
+	    (parsetext ( fp, "drm_edgesize",          'd', &drm_edgesize         ) != 0) ||
+	    (parsetext ( fp, "drm_offset_x",          'd', &x_offset             ) != 0) ||
+	    (parsetext ( fp, "drm_offset_y",          'd', &y_offset             ) != 0) ||
+	    (parsetext ( fp, "drm_print_rate",        'i', &drm_print_rate       ) != 0) ||
+	    (parsetext ( fp, "part1_delta_t",         'd', &part1_delta_t        ) != 0) ||
+	    (parsetext ( fp, "part1_simulation_time", 'd', &part1_simtime        ) != 0) )
 	{
 		solver_abort ( "drm_initparameters", NULL,
 				"Error parsing fields from %s\n", parametersin);
@@ -288,6 +297,7 @@ int32_t drm_initparameters (const char *parametersin) {
 
 	thePart1DeltaT = part1_delta_t;
 	theDrmPrintRate = drm_print_rate;
+	thePart1SimTime = part1_simtime;
 
 	theDrmPart  = drmPart;
 
@@ -1271,6 +1281,33 @@ void proc_drm_elems( mesh_t   *myMesh,     int32_t   myID,
 		/* Fill drmElem struct now. */
 
 		XMALLOC_VAR_N( theDrmElem, drm_elem_t, myNumberOfDrmElements );
+
+		/* theDrmElem = (drm_elem_t *)malloc(sizeof(drm_elem_t));
+	    if ( theDrmElem == NULL) {
+	        fprintf(stderr, "Thread %d: theDrmElem: out of memory\n", myID);
+	        MPI_Abort(MPI_COMM_WORLD, ERROR);
+	        exit(1);
+	    } */
+
+		theDrmElem->conv_shear_1 = (fvector_t *)calloc( 8 * myNumberOfDrmElements, sizeof(qvect2_t));
+		theDrmElem->conv_shear_2 = (fvector_t *)calloc( 8 * myNumberOfDrmElements, sizeof(qvect2_t));
+        theDrmElem->conv_shear_3 = (fvector_t *)calloc( 8 * myNumberOfDrmElements, sizeof(qvect2_t));
+
+        theDrmElem->conv_kappa_1 = (fvector_t *)calloc( 8 * myNumberOfDrmElements, sizeof(qvect2_t));
+        theDrmElem->conv_kappa_2 = (fvector_t *)calloc( 8 * myNumberOfDrmElements, sizeof(qvect2_t));
+        theDrmElem->conv_kappa_3 = (fvector_t *)calloc( 8 * myNumberOfDrmElements, sizeof(qvect2_t));
+
+        if ( (theDrmElem->conv_shear_1 == NULL) ||
+             (theDrmElem->conv_shear_2 == NULL) ||
+             (theDrmElem->conv_shear_3 == NULL) ||
+             (theDrmElem->conv_kappa_1 == NULL) ||
+             (theDrmElem->conv_kappa_2 == NULL) ||
+             (theDrmElem->conv_kappa_3 == NULL)  ) {
+
+            fprintf(stderr, "Thread %d: theDrmElem: out of memory\n", myID);
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
 
 		/* Loop each element to fill drm element struct.
 		 */
@@ -2313,11 +2350,122 @@ void solver_read_drm_displacements( int32_t step, double deltat, int32_t totalst
 }
 
 
+/*
+ * For the first step read two displacements.
+ */
+void solver_read_drm_displacements_v2( int32_t step, double deltat, int32_t totalsteps ) {
+
+    double T         = deltat * step;
+
+    Timer_Start("Solver drm read displacements");
+
+    if ( drmImplement == YES && theDrmPart == PART2 && myNumberOfDrmNodes != 0 && T < thePart1SimTime)
+    {
+
+        if ( thePart1DeltaT <  deltat  ) {
+            fprintf( stderr, "\n DRM Error: \n Current dt greater than Part1 time-step. It must be equal or less \n" );
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
+
+        int i,  interval, interval2;
+        fvector_t* tmpvector, *tmpvector2;
+
+        interval = floor(T/thePart1DeltaT);
+        interval2 = floor((T-deltat)/thePart1DeltaT);
+
+        if (interval2 < 0)
+            interval2 = 0;
+
+        if (step < totalsteps - 1  ) {
+
+            if ( step == 0 ) {
+                // XMALLOC_VAR_N( theDrmDisplacements1, fvector_t, myNumberOfDrmNodes );
+                //XMALLOC_VAR_N( theDrmDisplacements2, fvector_t, myNumberOfDrmNodes );
+
+                theDrmDisplacements1 = (fvector_t *)calloc(1 * myNumberOfDrmNodes, sizeof(fvector_t));
+                theDrmDisplacements2 = (fvector_t *)calloc(1 * myNumberOfDrmNodes, sizeof(fvector_t));
+
+                theDrmDisplacements1_stepm1 = (fvector_t *)calloc(1 * myNumberOfDrmNodes, sizeof(fvector_t));
+                theDrmDisplacements2_stepm1 = (fvector_t *)calloc(1 * myNumberOfDrmNodes, sizeof(fvector_t));
+
+            }
+            if ( step >= 1 ) {
+                tmpvector     = theDrmDisplacements2;
+                theDrmDisplacements2 = theDrmDisplacements1;
+                theDrmDisplacements1 = tmpvector;
+
+                tmpvector2     = theDrmDisplacements2_stepm1;
+                theDrmDisplacements2_stepm1 = theDrmDisplacements1_stepm1;
+                theDrmDisplacements1_stepm1 = tmpvector2;
+
+            }
+
+            if ( step == 0 ) {
+                for( i=0; i<filesToReadCnt;++i) {
+                    off_t   whereToRead;
+                    whereToRead = ((off_t)sizeof(int32_t))
+                                                + (off_t)drmFilesToRead[i].nodes_cnt * (off_t)sizeof(double) *(off_t) 3;
+                    hu_fseeko( drmFilesToRead[i].fp, whereToRead, SEEK_SET );
+                    hu_fread( theDrmDisplacements1 + drmFilesToRead[i].total_nodes_cnt
+                            ,sizeof(double), 3 * drmFilesToRead[i].nodes_cnt,
+                            drmFilesToRead[i].fp );
+                }
+            }
+
+            for( i=0; i<filesToReadCnt;++i) {
+                off_t   whereToRead;
+                whereToRead = ((off_t)sizeof(int32_t))
+                                            +(off_t)drmFilesToRead[i].nodes_cnt * (off_t)sizeof(double) *(off_t) 3
+                                            +(off_t)drmFilesToRead[i].nodes_cnt *(off_t) (interval+1) *(off_t) sizeof(double) * (off_t)3;
+                hu_fseeko( drmFilesToRead[i].fp, whereToRead, SEEK_SET );
+                hu_fread( theDrmDisplacements2 + drmFilesToRead[i].total_nodes_cnt
+                        ,sizeof(double), 3 * drmFilesToRead[i].nodes_cnt,
+                        drmFilesToRead[i].fp );
+            }
+
+            if ( step == 1 ) {
+                for( i=0; i<filesToReadCnt;++i) {
+                    off_t   whereToRead;
+                    whereToRead = ((off_t)sizeof(int32_t))
+                                                +(off_t)drmFilesToRead[i].nodes_cnt * (off_t)sizeof(double) *(off_t) 3
+                                                +(off_t)drmFilesToRead[i].nodes_cnt *(off_t) (interval2) *(off_t) sizeof(double) * (off_t)3;
+                    hu_fseeko( drmFilesToRead[i].fp, whereToRead, SEEK_SET );
+                    hu_fread( theDrmDisplacements1_stepm1 + drmFilesToRead[i].total_nodes_cnt
+                            ,sizeof(double), 3 * drmFilesToRead[i].nodes_cnt,
+                            drmFilesToRead[i].fp );
+                }
+            }
+
+            if ( step >= 1 ) {
+                for( i=0; i<filesToReadCnt;++i) {
+                    off_t   whereToRead;
+                    whereToRead = ((off_t)sizeof(int32_t))
+                                                    +(off_t)drmFilesToRead[i].nodes_cnt * (off_t)sizeof(double) *(off_t) 3
+                                                    +(off_t)drmFilesToRead[i].nodes_cnt *(off_t) (interval2+1) *(off_t) sizeof(double) * (off_t)3;
+                    hu_fseeko( drmFilesToRead[i].fp, whereToRead, SEEK_SET );
+                    hu_fread( theDrmDisplacements2_stepm1 + drmFilesToRead[i].total_nodes_cnt
+                            ,sizeof(double), 3 * drmFilesToRead[i].nodes_cnt,
+                            drmFilesToRead[i].fp );
+                }
+            }
+
+        }
+
+    }
+
+    Timer_Stop("Solver drm read displacements");
+}
+
 void solver_compute_effective_drm_force( mysolver_t* mySolver , mesh_t* myMesh,
 				    fmatrix_t (*theK1)[8], fmatrix_t (*theK2)[8], int32_t step,
 				    double deltat)
 {
 	Timer_Start("Solver drm force compute");
+
+	double   T       = deltat * step;
+    int     interval = floor(T/thePart1DeltaT);
+    double fracture2 = (T-interval*thePart1DeltaT)/thePart1DeltaT;
 
 	if ( drmImplement == YES && theDrmPart == PART2 && myNumberOfDrmNodes != 0) {
 
@@ -2362,8 +2510,8 @@ void solver_compute_effective_drm_force( mysolver_t* mySolver , mesh_t* myMesh,
 				for (e = 0; e < theDrmElem[lin_eindex].exteriornodescount; e++)
 				{
 					int position,index;
-					double low[3], high[3];
-					fvector_t  myDisp[1];
+					double low[3], high[3], low_stepm1[3], high_stepm1[3];
+					fvector_t  myDisp[1], myDisp_stepm1[1];
 					/*id of exterior node.e is b/w 0-7 */
 					ln_drm_id_e = theDrmElem[lin_eindex].lnid_e[e];
 
@@ -2373,8 +2521,14 @@ void solver_compute_effective_drm_force( mysolver_t* mySolver , mesh_t* myMesh,
 					for( index = 0; index < 3; index++) {
 						low[index]  = theDrmDisplacements1[position].f[index];
 						high[index] = theDrmDisplacements2[position].f[index];
-						myDisp[0].f[index] = low[index] + fracture*(high[index] - low[index]);
+						myDisp[0].f[index] = low[index] + fracture2*(high[index] - low[index]);
+
+                        low_stepm1[index]         = theDrmDisplacements1_stepm1[position].f[index];
+                        high_stepm1[index]        = theDrmDisplacements2_stepm1[position].f[index];
+                        myDisp_stepm1[0].f[index] = low_stepm1[index] + fracture2*(high_stepm1[index] - low_stepm1[index]);
 					}
+
+					// perform bkt transformation
 
 					/* effective  force contribution ( fb = - deltaT_square * Kbe * Ue )
 					 * But if myDisp is zero avoids multiplications
@@ -2409,7 +2563,7 @@ void solver_compute_effective_drm_force( mysolver_t* mySolver , mesh_t* myMesh,
 					for( index = 0; index < 3; index++) {
 						low[index]  = theDrmDisplacements1[position].f[index];
 						high[index] = theDrmDisplacements2[position].f[index];
-						myDisp[0].f[index] = low[index] + fracture*(high[index] - low[index]);
+						myDisp[0].f[index] = low[index] + fracture2*(high[index] - low[index]);
 					}
 
 					/* effective  force contribution ( fe = + deltaT_square * Keb * Ub )
@@ -2433,6 +2587,222 @@ void solver_compute_effective_drm_force( mysolver_t* mySolver , mesh_t* myMesh,
 		}
 	}
 	Timer_Stop("Solver drm force compute");
+}
+
+void solver_compute_effective_drm_force_v2( mysolver_t* mySolver , mesh_t* myMesh,
+                    fmatrix_t (*theK1)[8], fmatrix_t (*theK2)[8], int32_t step,
+                    double deltat, damping_type_t theTypeofDamping,
+                    double theFreq, double theDeltaTSquared)
+{
+    Timer_Start("Solver drm force compute");
+
+    double   T       = deltat * step;
+    int     interval = floor(T/thePart1DeltaT);
+    double fracture2 = (T-interval*thePart1DeltaT)/thePart1DeltaT;
+
+    if ( drmImplement == YES && theDrmPart == PART2 && myNumberOfDrmNodes != 0) {
+
+        int32_t    b, e, i ;
+        int32_t    lin_eindex, cindex;
+        int32_t    ln_drm_id_e, ln_drm_id_b;
+
+        int        remainder,aux;
+        double     fracture;
+        fvector_t  localForce[8];
+        fvector_t* toForce ;
+
+        fvector_t  *convshear_1, *convshear_2, *convshear_3;
+        fvector_t  *convkappa_1, *convkappa_2, *convkappa_3;
+
+        /* For Interpolation */
+
+        aux = (int)(theDrmPrintRate*thePart1DeltaT/deltat);
+        remainder = step % aux;
+        fracture = (double)remainder/(double)aux;
+
+        //printf("%f ", fracture);
+        /* loop on the number of drm elements */
+        for (lin_eindex = 0; lin_eindex < myNumberOfDrmElements; lin_eindex++) {
+
+            elem_t* elemp;
+            e_t*    ep;
+            edata_t *edata;
+
+            /*Local id of drm elment*/
+            int32_t ldrm_id = theDrmElem[lin_eindex].leid;
+
+            elemp  = &myMesh->elemTable[ldrm_id];
+            ep     = &mySolver->eTable[ldrm_id];
+
+            edata = (edata_t *)elemp->data;
+
+            memset( localForce, 0, 8 * sizeof(fvector_t) );
+
+            /* step 1: calculate the force contribution at boundary nodes */
+            /* contribution by node e to node b */
+            for (b = 0; b < theDrmElem[lin_eindex].boundarynodescount; b++)
+            {
+                /*Local id of boundary node.b is b/w 0-7 */
+                ln_drm_id_b = theDrmElem[lin_eindex].lnid_b[b];
+                toForce = &localForce[ln_drm_id_b];
+
+                for (e = 0; e < theDrmElem[lin_eindex].exteriornodescount; e++)
+                {
+                    int position,index;
+                    double low[3], high[3], low_stepm1[3], high_stepm1[3];
+                    fvector_t  myDisp[1], myDisp_stepm1[1];
+                    /*id of exterior node.e is b/w 0-7 */
+                    ln_drm_id_e = theDrmElem[lin_eindex].lnid_e[e];
+
+                    position = theDrmElem[lin_eindex].whereIam[ln_drm_id_e];
+
+                    /* Interpolation is done here */
+                    for( index = 0; index < 3; index++) {
+                        low[index]  = theDrmDisplacements1[position].f[index];
+                        high[index] = theDrmDisplacements2[position].f[index];
+                        myDisp[0].f[index] = low[index] + fracture2*(high[index] - low[index]);
+
+                        low_stepm1[index]         = theDrmDisplacements1_stepm1[position].f[index];
+                        high_stepm1[index]        = theDrmDisplacements2_stepm1[position].f[index];
+                        myDisp_stepm1[0].f[index] = low_stepm1[index] + fracture2*(high_stepm1[index] - low_stepm1[index]);
+                    }
+
+                    /* effective  force contribution ( fb = - deltaT_square * Kbe * Ue )
+                     * But if myDisp is zero avoids multiplications
+                     */
+
+                    // perform bkt transformation
+                    if ( theTypeofDamping >= BKT) {
+
+                        fvector_t  myDisp_Shear[1], myDisp_Kappa[1];
+
+                        cindex = lin_eindex * 8 + ln_drm_id_e;
+
+                        convshear_1 = theDrmElem->conv_shear_1 + cindex;
+                        convshear_2 = theDrmElem->conv_shear_2 + cindex;
+                        convshear_3 = theDrmElem->conv_shear_3 + cindex;
+
+                        convkappa_1 = theDrmElem->conv_kappa_1 + cindex;
+                        convkappa_2 = theDrmElem->conv_kappa_2 + cindex;
+                        convkappa_3 = theDrmElem->conv_kappa_3 + cindex;
+
+
+                        BKT_TU_transf( theFreq, deltat, theDeltaTSquared, theTypeofDamping,
+                                convshear_1, convkappa_1,
+                                convshear_2, convkappa_2,
+                                convshear_3, convkappa_3,
+                                edata,
+                                myDisp, myDisp_stepm1,
+                                myDisp_Shear, myDisp_Kappa );
+
+                            if ( (vector_is_all_zero( myDisp_Shear ) != 0)) {
+                                MultAddMatVec( &theK1[ln_drm_id_b][ln_drm_id_e], myDisp_Shear, -ep->c1,     toForce );
+                                MultAddMatVec( &theK2[ln_drm_id_b][ln_drm_id_e], myDisp_Shear,  ep->c1/3.0, toForce );
+                            }
+                            if ( (vector_is_all_zero( myDisp_Kappa ) != 0)) {
+                                MultAddMatVec( &theK2[ln_drm_id_b][ln_drm_id_e], myDisp_Kappa, -ep->c2 - ep->c1/3.0, toForce );
+                            }
+
+                    } else {
+
+                        if ( (vector_is_all_zero( myDisp ) != 0)) {
+                            MultAddMatVec( &theK1[ln_drm_id_b][ln_drm_id_e], myDisp, -ep->c1, toForce );
+                            MultAddMatVec( &theK2[ln_drm_id_b][ln_drm_id_e], myDisp, -ep->c2, toForce );
+                        }
+                    }
+                }
+            }
+
+            /* step 2: calculate the force at exterior nodes */
+            /* contribution by node b to node e */
+            for (e = 0; e < theDrmElem[lin_eindex].exteriornodescount; e++)
+            {
+                /*Local id of exterior node.e is b/w 0-7 */
+                ln_drm_id_e = theDrmElem[lin_eindex].lnid_e[e];
+                toForce = &localForce[ln_drm_id_e];
+
+                for (b = 0; b < theDrmElem[lin_eindex].boundarynodescount; b++)
+                {
+                    int position, index;
+                    double low[3], high[3], low_stepm1[3], high_stepm1[3];
+
+                    fvector_t  myDisp[1],  myDisp_stepm1[1];
+                    /*id of boundary node.b is b/w 0-7 */
+                    ln_drm_id_b = theDrmElem[lin_eindex].lnid_b[b];
+
+                    position = theDrmElem[lin_eindex].whereIam[ln_drm_id_b];
+
+                    /* Interpolation is done here */
+                    for( index = 0; index < 3; index++) {
+                        low[index]  = theDrmDisplacements1[position].f[index];
+                        high[index] = theDrmDisplacements2[position].f[index];
+                        myDisp[0].f[index] = low[index] + fracture2*(high[index] - low[index]);
+
+                        low_stepm1[index]         = theDrmDisplacements1_stepm1[position].f[index];
+                        high_stepm1[index]        = theDrmDisplacements2_stepm1[position].f[index];
+                        myDisp_stepm1[0].f[index] = low_stepm1[index] + fracture2*(high_stepm1[index] - low_stepm1[index]);
+
+                    }
+
+                    /* effective  force contribution ( fe = + deltaT_square * Keb * Ub )
+                     * But if myDisp is zero avoids multiplications
+                     */
+
+                    // perform bkt transformation
+                    if ( theTypeofDamping >= BKT) {
+
+                        fvector_t  myDisp_Shear[1], myDisp_Kappa[1];
+
+                        cindex = lin_eindex * 8 + ln_drm_id_b;
+
+                        convshear_1 = theDrmElem->conv_shear_1 + cindex;
+                        convshear_2 = theDrmElem->conv_shear_2 + cindex;
+                        convshear_3 = theDrmElem->conv_shear_3 + cindex;
+
+                        convkappa_1 = theDrmElem->conv_kappa_1 + cindex;
+                        convkappa_2 = theDrmElem->conv_kappa_2 + cindex;
+                        convkappa_3 = theDrmElem->conv_kappa_3 + cindex;
+
+                        BKT_TU_transf( theFreq, deltat, theDeltaTSquared, theTypeofDamping,
+                                convshear_1, convkappa_1,
+                                convshear_2, convkappa_2,
+                                convshear_3, convkappa_3,
+                                edata,
+                                myDisp, myDisp_stepm1,
+                                myDisp_Shear, myDisp_Kappa );
+
+
+                            if ( (vector_is_all_zero( myDisp_Shear ) != 0)) {
+                                MultAddMatVec( &theK1[ln_drm_id_e][ln_drm_id_b], myDisp_Shear,  ep->c1,     toForce );
+                                MultAddMatVec( &theK2[ln_drm_id_e][ln_drm_id_b], myDisp_Shear, -ep->c1/3.0, toForce );
+                            }
+                            if ( (vector_is_all_zero( myDisp_Kappa ) != 0)) {
+                                MultAddMatVec( &theK2[ln_drm_id_e][ln_drm_id_b], myDisp_Kappa,  ep->c2 + ep->c1/3.0, toForce );
+                            }
+
+                    } else {
+
+                        if ( (vector_is_all_zero( myDisp ) != 0)) {
+                            MultAddMatVec( &theK1[ln_drm_id_e][ln_drm_id_b], myDisp, ep->c1, toForce );
+                            MultAddMatVec( &theK2[ln_drm_id_e][ln_drm_id_b], myDisp, ep->c2, toForce );
+                        }
+                    }
+                }
+            }
+
+            /* step 3: sum up my contribution to my vertex nodes */
+            for (i = 0; i < 8; i++) {
+                int32_t    lnid       = elemp->lnid[i];
+                fvector_t* nodalForce = mySolver->force + lnid;
+                nodalForce->f[0] += localForce[i].f[0];
+                nodalForce->f[1] += localForce[i].f[1];
+                nodalForce->f[2] += localForce[i].f[2];
+            }
+        }
+    }
+
+
+    Timer_Stop("Solver drm force compute");
 }
 
 void drm_sanity_check(int32_t  myID) {

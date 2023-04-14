@@ -21,11 +21,23 @@
 #define DRM_H_
 
 #include "quake_util.h"
-
+#include "damping.h"
+#include "psolve.h"
 
 /* -------------------------------------------------------------------------- */
 /*                                Structures                                  */
 /* -------------------------------------------------------------------------- */
+
+typedef struct vect2_t {
+    double x;
+    double y;
+    double z;
+} vect2_t;
+
+
+typedef struct qvect2_t {
+    fvector_t* qf[8];
+} qvect2_t;
 
 typedef enum {
 
@@ -65,6 +77,14 @@ typedef struct drm_elem_t {
 	int32_t    exteriornodescount; /* Number of exterior nodes */
 
 	int     whereIam[8];           /* Position of the node in theDrmDisplacements array */
+
+	fvector_t* conv_shear_1;   /* bkt related vectors */
+	fvector_t* conv_shear_2;
+	fvector_t* conv_shear_3;
+	fvector_t* conv_kappa_1;
+	fvector_t* conv_kappa_2;
+	fvector_t* conv_kappa_3;
+
 
 } drm_elem_t;
 
@@ -192,7 +212,14 @@ void solver_compute_effective_drm_force( mysolver_t* mySolver , mesh_t* myMesh,
 				    fmatrix_t (*theK1)[8], fmatrix_t (*theK2)[8], int32_t step,
 				    double deltat);
 
+void solver_compute_effective_drm_force_v2( mysolver_t* mySolver , mesh_t* myMesh,
+                    fmatrix_t (*theK1)[8], fmatrix_t (*theK2)[8], int32_t step,
+                    double deltat, damping_type_t theTypeofDamping,
+                    double theFreq, double theDeltaTSquared);
+
 void solver_read_drm_displacements( int32_t step, double deltat,int32_t totalsteps ) ;
+
+void solver_read_drm_displacements_v2( int32_t step, double deltat,int32_t totalsteps ) ;
 
 void drm_sanity_check(int32_t  myID);
 

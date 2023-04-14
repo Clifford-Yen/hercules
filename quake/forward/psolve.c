@@ -57,7 +57,8 @@
 #include "buildings.h"
 #include "drm.h"
 #include "meshformatlab.h"
-
+#include "topography.h"
+#include "drm_planewaves.h"
 
 /* ONLY GLOBAL VARIABLES ALLOWED OUTSIDE OF PARAM. and GLOBAL. IN ALL OF PSOLVE!! */
 MPI_Comm comm_solver;
@@ -67,11 +68,11 @@ MPI_Comm comm_IO;
 #define PROCPERNODE     4
 #endif
 
-#define PI		3.14159265358979323846264338327
+#define PI      3.14159265358979323846264338327
 
 #define GOAHEAD_MSG     100
-#define MESH_MSG	101
-#define STAT_MSG	102
+#define MESH_MSG    101
+#define STAT_MSG    102
 #define OUT4D_MSG       103
 #define DN_MASS_MSG     104
 #define AN_MASS_MSG     105
@@ -81,13 +82,13 @@ MPI_Comm comm_IO;
 #define AN_DISP_MSG     109
 #define CVMRECORD_MSG   110
 
-#define BATCH		(1 << 20)
-#define LINESIZE	512
+#define BATCH       (1 << 20)
+#define LINESIZE    512
 #define FILEBUFSIZE     (1 << 25)
 
 
 #define CONTRIBUTION    901  /**< Harboring processors to owner processors */
-#define SHARING		902  /**< Owner processors to harboring processors */
+#define SHARING     902  /**< Owner processors to harboring processors */
 
 #define DISTRIBUTION    903  /**< Dangling nodes to anchored nodes */
 #define ASSIGNMENT      904  /**< Anchored nodes to dangling nodes */
@@ -97,6 +98,12 @@ MPI_Comm comm_IO;
 static void    read_parameters(int argc, char **argv);
 static int32_t parse_parameters(const char *numericalin);
 static void    local_finalize(void);
+
+/** cvmrecord_t: cvm record.  Onlye used if USECVMDB not defined **/
+typedef struct cvmrecord_t {
+    char key[12];
+    float Vp, Vs, density;
+} cvmrecord_t;
 
 /*---------------- Mesh generation data structures -----------------------*/
 #ifdef USECVMDB
@@ -111,15 +118,10 @@ static void     open_cvmdb(void);
 #else
 
 static int32_t zsearch(void *base, int32_t count, int32_t recordsize,
-		       const point_t *searchpt);
+               const point_t *searchpt);
 static cvmrecord_t *sliceCVM(const char *cvm_flatfile);
 
 #endif
-/** cvmrecord_t: cvm record.  Onlye used if USECVMDB not defined **/
-typedef struct cvmrecord_t {
-    char key[12];
-    float Vp, Vs, density;
-} cvmrecord_t;
 
 /**
  * mrecord_t: Complete mesh database record
@@ -147,26 +149,26 @@ static int     solver_print_schedules(mysolver_t* solver);
 
 static schedule_t* schedule_new(void);
 static void    schedule_build(mesh_t *mesh, schedule_t *dnsched,
-			      schedule_t *ansched);
+                  schedule_t *ansched);
 static void    schedule_allocMPIctl(schedule_t *sched);
 static void    schedule_allocmapping(schedule_t *sched);
 static void    schedule_delete(schedule_t *sched);
 static void    schedule_prepare(schedule_t *sched, int32_t c_outsize,
-				int32_t c_insize, int32_t s_outsize,
-				int32_t s_insize);
+                int32_t c_insize, int32_t s_outsize,
+                int32_t s_insize);
 static void    schedule_senddata(schedule_t *sched, void *valuetable,
-				 int32_t itemsperentry, int32_t direction,
-				 int32_t msgtag);
+                 int32_t itemsperentry, int32_t direction,
+                 int32_t msgtag);
 static int     schedule_print( schedule_t *sched, char type, FILE* out );
 static int     schedule_print_detail(schedule_t* sched, char type, FILE* out);
 static int     schedule_print_messenger_list( schedule_t* sched,
-					      messenger_t* msg, int count,
-					      char type, char cs, FILE* out );
+                          messenger_t* msg, int count,
+                          char type, char cs, FILE* out );
 
 static messenger_t *messenger_new(int32_t procid);
 static void    messenger_delete(messenger_t *messenger);
 static void    messenger_set(messenger_t *messenger, int32_t outsize,
-			     int32_t insize);
+                 int32_t insize);
 static int32_t messenger_countnodes(messenger_t *first);
 
 static void    compute_K(void);
@@ -174,15 +176,15 @@ static void constract_Quality_Factor_Table(void);
 
 #ifdef BOUNDARY
 static char    compute_setflag(tick_t ldb[3], tick_t ruf[3],
-			       tick_t nearendp[3], tick_t farendp[3]);
+                   tick_t nearendp[3], tick_t farendp[3]);
 static void    compute_setboundary(float size, float Vp, float Vs,
-				   float rho, int flag, double dashpot[8][3]);
+                   float rho, int flag, double dashpot[8][3]);
 #endif /* BOUNDARY */
 
 static void    compute_setab(double freq, double *aBasePtr, double *bBasePtr);
 static void    compute_addforce_s(int32_t timestep);
 static void    compute_adjust(void *valuetable, int32_t itemsperentry,
-			      int32_t how);
+                  int32_t how);
 
 static int     interpolate_station_displacements(int32_t step);
 
@@ -191,7 +193,7 @@ static int     interpolate_station_displacements(int32_t step);
 
 /* These are all of the input parameters - add new ones here */
 static struct Param_t {
-    char  FourDOutFile[256]; 
+    char  FourDOutFile[256];
     FILE*  FourDOutFp;
     FILE*  theMonitorFileFp;
     char*  theMonitorFileName;
@@ -214,21 +216,27 @@ static struct Param_t {
     int32_t  theTotalSteps;
     int32_t  theRate;
     damping_type_t  theTypeOfDamping;
-    double	theThresholdDamping;
-    double	theThresholdVpVs;
-    int	   theDampingStatisticsFlag;
-    int	   theSchedulePrintErrorCheckFlag;
-    int	   theSchedulePrintToStdout;
-    int	   theSchedulePrintToFile;
+    double  theThresholdDamping;
+    double  theThresholdVpVs;
+    int    theDampingStatisticsFlag;
+    int    theSchedulePrintErrorCheckFlag;
+    int    theSchedulePrintToStdout;
+    int    theSchedulePrintToFile;
     char*  theSchedulePrintFilename;
-    char*	theScheduleStatFilename;
+    char*   theScheduleStatFilename;
     char*       theMeshStatFilename;
     noyesflag_t  printStationVelocities;
     noyesflag_t  printK;
     noyesflag_t  printStationAccelerations;
     noyesflag_t  includeBuildings;
+    noyesflag_t  includeTopography;
+    noyesflag_t  useParametricQ;
     noyesflag_t  includeNonlinearAnalysis;
     noyesflag_t  useInfQk;
+    noyesflag_t  includeIncidentPlaneWaves;
+    noyesflag_t  includeHomogeneousHalfSpace;
+    noyesflag_t  IstanbulMaterialModel;
+
     int  theTimingBarriersFlag;
     stiffness_type_t   theStiffness;
     int      theStationsPrintRate;
@@ -251,7 +259,7 @@ static struct Param_t {
     char  theCVMFlatFile[128];
     output_parameters_t  theOutputParameters;
     double  theRegionLong;
-    double  theRegionLat; 
+    double  theRegionLat;
     double  theRegionDepth;
     double  region_depth_deep_m;
     double  theSurfaceCornersLong[4];
@@ -261,6 +269,17 @@ static struct Param_t {
     double  theDomainZ;
     noyesflag_t  drmImplement;
     drm_part_t   theDrmPart;
+    noyesflag_t  useProfile;
+    int32_t      theNumberOfLayers;
+    double*  theProfileZ;
+    double*  theProfileVp;
+    double*  theProfileVs;
+    double*  theProfileRho;
+    double*  theProfileQp;
+    double*  theProfileQs;
+    double   theQConstant;
+    double   theQAlpha;
+    double   theQBeta;
 
 } Param = {
     .FourDOutFp = NULL,
@@ -280,7 +299,9 @@ static struct Param_t {
     .theUseCheckPoint =0,
     .theTimingBarriersFlag = 0,
     .the4DOutSize   = 0,
-    .theMeshOutFlag = DO_OUTPUT
+    .theMeshOutFlag = DO_OUTPUT,
+    .useProfile = NO,
+    .theNumberOfLayers = 0
 };
 
 /* These are all of the remaining global variables - this list should not grow */
@@ -344,17 +365,17 @@ monitor_print( const char* format, ... )
     int ret = 0;
 
     if (format != NULL) {
-	va_list args;
+    va_list args;
 
-	va_start( args, format );
+    va_start( args, format );
 
-	if (Param.theMonitorFileFp == NULL) {
-	    ret = vfprintf( stderr, format, args );
-	} else {
-	    ret = hu_print_tee_va( Param.theMonitorFileFp, format, args );
-	}
+    if (Param.theMonitorFileFp == NULL) {
+        ret = vfprintf( stderr, format, args );
+    } else {
+        ret = hu_print_tee_va( Param.theMonitorFileFp, format, args );
+    }
 
-	va_end( args );
+    va_end( args );
     }
 
     return ret;
@@ -366,8 +387,8 @@ monitor_print( const char* format, ... )
 
 static void read_parameters( int argc, char** argv ){
 
-#define LOCAL_INIT_DOUBLE_MESSAGE_LENGTH 18  /* Must adjust this if adding double params */
-#define LOCAL_INIT_INT_MESSAGE_LENGTH 20     /* Must adjust this if adding int params */
+#define LOCAL_INIT_DOUBLE_MESSAGE_LENGTH 21  /* Must adjust this if adding double params */
+#define LOCAL_INIT_INT_MESSAGE_LENGTH 26     /* Must adjust this if adding int params */
 
     double  double_message[LOCAL_INIT_DOUBLE_MESSAGE_LENGTH];
     int     int_message[LOCAL_INIT_INT_MESSAGE_LENGTH];
@@ -402,6 +423,9 @@ static void read_parameters( int argc, char** argv ){
     double_message[15] = Param.theRegionLat;
     double_message[16] = Param.theRegionLong;
     double_message[17] = Param.theRegionDepth;
+    double_message[18] = Param.theQConstant;
+    double_message[19] = Param.theQAlpha;
+    double_message[20] = Param.theQBeta;
 
 
     MPI_Bcast(double_message, LOCAL_INIT_DOUBLE_MESSAGE_LENGTH, MPI_DOUBLE, 0, comm_solver);
@@ -416,14 +440,17 @@ static void read_parameters( int argc, char** argv ){
     Param.theDomainX          = double_message[7];
     Param.theDomainY          = double_message[8];
     Param.theDomainZ          = double_message[9];
-    Param.theDomainAzimuth	= double_message[10];
+    Param.theDomainAzimuth  = double_message[10];
     Param.theThresholdDamping = double_message[11];
     Param.theThresholdVpVs    = double_message[12];
     Param.theSofteningFactor  = double_message[13];
-    Param.theFreq_Vel		= double_message[14];
-    Param.theRegionLat		= double_message[15];
-    Param.theRegionLong		= double_message[16];
+    Param.theFreq_Vel       = double_message[14];
+    Param.theRegionLat      = double_message[15];
+    Param.theRegionLong     = double_message[16];
     Param.theRegionDepth    = double_message[17];
+    Param.theQConstant      = double_message[18];
+    Param.theQAlpha         = double_message[19];
+    Param.theQBeta          = double_message[20];
 
     /*Broadcast all integer params*/
     int_message[0]  = Param.theTotalSteps;
@@ -446,7 +473,12 @@ static void read_parameters( int argc, char** argv ){
     int_message[17] = (int)Param.drmImplement;
     int_message[18] = (int)Param.useInfQk;
     int_message[19] = Param.theStepMeshingFactor;
-
+    int_message[20] = (int)Param.includeTopography;
+    int_message[21] = (int)Param.includeIncidentPlaneWaves;
+    int_message[22] = (int)Param.includeHomogeneousHalfSpace;
+    int_message[23] = (int)Param.IstanbulMaterialModel;
+    int_message[24] = (int)Param.useProfile;
+    int_message[25] = (int)Param.useParametricQ;
 
     MPI_Bcast(int_message, LOCAL_INIT_INT_MESSAGE_LENGTH, MPI_INT, 0, comm_solver);
 
@@ -470,6 +502,12 @@ static void read_parameters( int argc, char** argv ){
     Param.drmImplement                   = int_message[17];
     Param.useInfQk                       = int_message[18];
     Param.theStepMeshingFactor           = int_message[19];
+    Param.includeTopography              = int_message[20];
+    Param.includeIncidentPlaneWaves      = int_message[21];
+    Param.includeHomogeneousHalfSpace    = int_message[22];
+    Param.IstanbulMaterialModel          = int_message[23];
+    Param.useProfile                     = int_message[24];
+    Param.useParametricQ                 = int_message[25];
 
     /*Broadcast all string params*/
     MPI_Bcast (Param.parameters_input_file,  256, MPI_CHAR, 0, comm_solver);
@@ -478,6 +516,10 @@ static void read_parameters( int argc, char** argv ){
     MPI_Bcast (Param.cvmdb_input_file,       256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast (Param.mesh_etree_output_file, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast (Param.planes_input_file,      256, MPI_CHAR, 0, comm_solver);
+
+    /*Broadcast domain's coords */
+    MPI_Bcast(Param.theSurfaceCornersLong ,     4, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(Param.theSurfaceCornersLat,       4, MPI_DOUBLE, 0, comm_solver);
 
     return;
 }
@@ -496,7 +538,7 @@ local_finalize()
     free(Global.myForces);
 
     if (Global.myVelocityTable != NULL)
-	free(Global.myVelocityTable);
+    free(Global.myVelocityTable);
 
     /* Free memory associated with the solver */
     solver_delete();
@@ -523,40 +565,40 @@ parsetext (FILE* fp, const char* querystring, const char type, void* result)
 
     /* Look for the string until found */
     while (!found) {
-	char line[LINESIZE];
-	char *name, *value;
+    char line[LINESIZE];
+    char *name, *value;
 
-	/* Read in one line */
-	if (fgets(line, LINESIZE, fp) == NULL)
-	    break;
+    /* Read in one line */
+    if (fgets(line, LINESIZE, fp) == NULL)
+        break;
 
-	name = strtok(line, delimiters);
-	if ((name != NULL) && (strcmp(name, querystring) == 0)) {
-	    found = 1;
-	    value = strtok(NULL, delimiters);
+    name = strtok(line, delimiters);
+    if ((name != NULL) && (strcmp(name, querystring) == 0)) {
+        found = 1;
+        value = strtok(NULL, delimiters);
 
-	    switch (type) {
-	    case 'i':
-		res = sscanf(value, "%d", (int *)result);
-		break;
-	    case 'f':
-		res = sscanf(value, "%f", (float *)result);
-		break;
-	    case 'd':
-		res = sscanf(value, "%lf", (double *)result);
-		break;
-	    case 's':
-		res = 1;
-		strcpy((char *)result, value);
-		break;
-	    case 'u':
-		res = sscanf(value, "%u", (uint32_t *)result);
-		break;
-	    default:
-		fprintf(stderr, "parsetext: unknown type %c\n", type);
-		return -1;
-	    }
-	}
+        switch (type) {
+        case 'i':
+        res = sscanf(value, "%d", (int *)result);
+        break;
+        case 'f':
+        res = sscanf(value, "%f", (float *)result);
+        break;
+        case 'd':
+        res = sscanf(value, "%lf", (double *)result);
+        break;
+        case 's':
+        res = 1;
+        strcpy((char *)result, value);
+        break;
+        case 'u':
+        res = sscanf(value, "%u", (uint32_t *)result);
+        break;
+        default:
+        fprintf(stderr, "parsetext: unknown type %c\n", type);
+        return -1;
+        }
+    }
 
     }
 
@@ -574,8 +616,8 @@ parsetext (FILE* fp, const char* querystring, const char type, void* result)
  *   and other type of errors.
  *
  * \return
- *	1 if the key name is found and the value is stored in \c value;
- *	0 if the key name was not found; -1 on error.
+ *  1 if the key name is found and the value is stored in \c value;
+ *  0 if the key name was not found; -1 on error.
  */
 static int
 read_config_string (FILE* fp, const char* key, char* value_ptr, size_t size)
@@ -598,34 +640,34 @@ read_config_string (FILE* fp, const char* key, char* value_ptr, size_t size)
 
     while (0 == ret && !ferror (fp)) {
 
-	if (fgets (line, LINESIZE, fp) == NULL) {
-	    if (!feof (fp)) {
-		ret = -1;	/* input error */
-	    }
-	    break;
-	}
+    if (fgets (line, LINESIZE, fp) == NULL) {
+        if (!feof (fp)) {
+        ret = -1;   /* input error */
+        }
+        break;
+    }
 
-	state_ptr = state;
-	name      = strtok_r (line, delimiters, &state_ptr);
+    state_ptr = state;
+    name      = strtok_r (line, delimiters, &state_ptr);
 
-	if ((name != NULL) && (strcmp (name, key) == 0)) {
-	    size_t value_len;
+    if ((name != NULL) && (strcmp (name, key) == 0)) {
+        size_t value_len;
 
-	    value = strtok_r (NULL, delimiters, &state_ptr);
+        value = strtok_r (NULL, delimiters, &state_ptr);
 
-	    if (NULL != value) {
-		value_len = strlen (value);
+        if (NULL != value) {
+        value_len = strlen (value);
 
-		if (value_len >= size) {
-		    ret = -2;	/* return buffer is too short */
-		} else {
-		    strncpy (value_ptr, value, size);
-		    ret = 1;
-		}
-	    }
+        if (value_len >= size) {
+            ret = -2;   /* return buffer is too short */
+        } else {
+            strncpy (value_ptr, value, size);
+            ret = 1;
+        }
+        }
 
-	    break;
-	}
+        break;
+    }
     }
 
     return ret;
@@ -658,22 +700,30 @@ static int32_t parse_parameters( const char* numericalin )
               region_depth_shallow_m, region_length_east_m,
               region_length_north_m, region_depth_deep_m,
               startT, endT, deltaT, softening_factor,
-              threshold_damping, threshold_VpVs, freq_vel;
+              threshold_damping, threshold_VpVs, freq_vel,
+              qconstant,qalpha,qbeta;
     char      type_of_damping[64],
-	      	  checkpoint_path[256],
+              checkpoint_path[256],
               include_buildings[64],
               include_nonlinear_analysis[64],
+              use_parametricq[64],
               stiffness_calculation_method[64],
               print_matrix_k[64],
               print_station_velocities[64],
               print_station_accelerations[64],
-	      	  mesh_coordinates_for_matlab[64],
-    		  implement_drm[64],
-    		  use_infinite_qk[64];
+              mesh_coordinates_for_matlab[64],
+              implement_drm[64],
+              use_infinite_qk[64],
+              include_topography[64],
+              include_incident_planewaves[64],
+              include_hmgHalfSpace[64],
+              IstanbulModel[64];
+
 
     damping_type_t   typeOfDamping     = -1;
     stiffness_type_t stiffness_method  = -1;
     noyesflag_t      have_buildings    = -1;
+    noyesflag_t      have_parametricq  = -1;
     noyesflag_t      includeNonlinear  = -1;
     noyesflag_t      printMatrixK      = -1;
     noyesflag_t      printStationVels  = -1;
@@ -681,14 +731,18 @@ static int32_t parse_parameters( const char* numericalin )
     noyesflag_t      useInfQk          = -1;
 
     noyesflag_t      meshCoordinatesForMatlab  = -1;
-    noyesflag_t      implementdrm  = -1;
+    noyesflag_t      implementdrm              = -1;
+    noyesflag_t      haveTopography            = -1;
+    noyesflag_t      includePlaneWaves         = -1;
+    noyesflag_t      includeHmgHalfSpace       = -1;
+    noyesflag_t      includeIstanbulMatmodel   = -1;
 
 
     /* Obtain the specification of the simulation */
     if ((fp = fopen(physicsin, "r")) == NULL)
     {
-	fprintf(stderr, "Error opening %s\n", physicsin);
-	return -1;
+    fprintf(stderr, "Error opening %s\n", physicsin);
+    return -1;
     }
 
     /* Julio, I know this violates the 80 chars printing limit, but we never
@@ -709,43 +763,53 @@ static int32_t parse_parameters( const char* numericalin )
     }
 
     if ( strcasecmp(type_of_damping, "rayleigh") == 0) {
-    	typeOfDamping = RAYLEIGH;
+        typeOfDamping = RAYLEIGH;
     } else if (strcasecmp(type_of_damping, "mass") == 0) {
-    	typeOfDamping = MASS;
+        typeOfDamping = MASS;
     } else if (strcasecmp(type_of_damping, "none") == 0) {
-    	typeOfDamping = NONE;
+        typeOfDamping = NONE;
     } else if (strcasecmp(type_of_damping, "bkt") == 0) {
-    	typeOfDamping = BKT;
+        typeOfDamping = BKT;
+    } else if (strcasecmp(type_of_damping, "bkt2") == 0) {
+        typeOfDamping = BKT2;
+    } else if (strcasecmp(type_of_damping, "bkt3") == 0) {
+        typeOfDamping = BKT3;
+    } else if (strcasecmp(type_of_damping, "bkt3f") == 0) {
+        typeOfDamping = BKT3F;
+
     } else {
-    	solver_abort( __FUNCTION_NAME, NULL,
-    			"Unknown damping type: %s\n",
-    			type_of_damping );
+        solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown damping type: %s\n",
+                type_of_damping );
     }
 
 
     fclose(fp); /* physics.in */
 
     if ((fp = fopen(numericalin, "r")) == NULL) {
-	fprintf(stderr, "Error opening %s\n", numericalin);
-	return -1;
+    fprintf(stderr, "Error opening %s\n", numericalin);
+    return -1;
     }
 
     size_t monitor_name_len = 0;
     hu_config_get_string_def( fp, "monitor_file", &Param.theMonitorFileName,
-			      &monitor_name_len, "monitor.txt" );
+                  &monitor_name_len, "monitor.txt" );
 
     /* open the monitor file of the simulation in pe 0 */
     Param.theMonitorFileFp = fopen( Param.theMonitorFileName, "w" );
     if (Param.theMonitorFileFp == NULL) {
-	fprintf( stderr,"\n Err opening the monitor file" );
+    fprintf( stderr,"\n Err opening the monitor file" );
     } else {
-	setlinebuf ( Param.theMonitorFileFp );
+    setlinebuf ( Param.theMonitorFileFp );
     }
 
     xfree_char( &Param.theMonitorFileName );
 
     /* numerical.in parse texts */
     if ((parsetext(fp, "simulation_wave_max_freq_hz",    'd', &freq                        ) != 0) ||
+        (parsetext(fp, "parametric_q_factor_constant",   'd', &qconstant                   ) != 0) ||
+        (parsetext(fp, "parametric_q_factor_alpha",      'd', &qalpha                      ) != 0) ||
+        (parsetext(fp, "parametric_q_factor_beta",       'd', &qbeta                       ) != 0) ||
         (parsetext(fp, "simulation_node_per_wavelength", 'i', &samples                     ) != 0) ||
         (parsetext(fp, "simulation_shear_velocity_min",  'd', &vscut                       ) != 0) ||
         (parsetext(fp, "simulation_start_time_sec",      'd', &startT                      ) != 0) ||
@@ -772,8 +836,13 @@ static int32_t parse_parameters( const char* numericalin )
         (parsetext(fp, "print_station_velocities",       's', &print_station_velocities    ) != 0) ||
         (parsetext(fp, "print_station_accelerations",    's', &print_station_accelerations ) != 0) ||
         (parsetext(fp, "include_buildings",              's', &include_buildings           ) != 0) ||
+        (parsetext(fp, "use_parametric_q_factor",        's', &use_parametricq             ) != 0) ||
         (parsetext(fp, "mesh_coordinates_for_matlab",    's', &mesh_coordinates_for_matlab ) != 0) ||
-        (parsetext(fp, "implement_drm",    				 's', &implement_drm               ) != 0) ||
+        (parsetext(fp, "implement_drm",                  's', &implement_drm               ) != 0) ||
+        (parsetext(fp, "include_topography",             's', &include_topography          ) != 0) ||
+        (parsetext(fp, "include_incident_planewaves",    's', &include_incident_planewaves ) != 0) ||
+        (parsetext(fp, "include_hmg_halfspace",          's', &include_hmgHalfSpace        ) != 0) ||
+        (parsetext(fp, "Istanbul_material_model",        's', &IstanbulModel               ) != 0) ||
         (parsetext(fp, "simulation_velocity_profile_freq_hz",'d', &freq_vel                ) != 0) ||
         (parsetext(fp, "use_infinite_qk",                's', &use_infinite_qk             ) != 0) )
     {
@@ -788,19 +857,17 @@ static int32_t parse_parameters( const char* numericalin )
     hu_config_get_int_opt(fp, "schedule_print_file", &Param.theSchedulePrintToFile );
 
     hu_config_get_int_opt(fp, "schedule_print_error_check",
-			  &Param.theSchedulePrintErrorCheckFlag);
+              &Param.theSchedulePrintErrorCheckFlag);
     hu_config_get_int_opt(fp, "schedule_print_stdout",
-			  &Param.theSchedulePrintToStdout );
+              &Param.theSchedulePrintToStdout );
 
     size_t schedule_stat_len = 0;
     hu_config_get_string_def( fp, "stat_schedule_filename",
-			      &Param.theScheduleStatFilename,
-			      &schedule_stat_len, "stat-sched.txt" );
+                  &Param.theScheduleStatFilename,
+                  &schedule_stat_len, "stat-sched.txt" );
     size_t mesh_stat_len = 0;
     hu_config_get_string_def( fp, "stat_mesh_filename", &Param.theMeshStatFilename,
-			      &mesh_stat_len, "stat-mesh.txt" );
-
-    fclose( fp );
+                  &mesh_stat_len, "stat-mesh.txt" );
 
     /* sanity check */
     if (freq <= 0) {
@@ -896,7 +963,7 @@ static int32_t parse_parameters( const char* numericalin )
         includeNonlinear = NO;
     } else {
         solver_abort( __FUNCTION_NAME, NULL,
-        	"Unknown response for including"
+            "Unknown response for including"
                 "nonlinear analysis (yes or no): %s\n",
                 include_nonlinear_analysis );
     }
@@ -944,14 +1011,14 @@ static int32_t parse_parameters( const char* numericalin )
     }
 
     if ( strcasecmp(mesh_coordinates_for_matlab, "yes") == 0 ) {
-    	meshCoordinatesForMatlab = YES;
+        meshCoordinatesForMatlab = YES;
     } else if ( strcasecmp(mesh_coordinates_for_matlab, "no") == 0 ) {
-    	meshCoordinatesForMatlab = NO;
+        meshCoordinatesForMatlab = NO;
     } else {
-    	solver_abort( __FUNCTION_NAME, NULL,
-    			"Unknown response for mesh coordinates"
-    			"for matlab (yes or no): %s\n",
-    			mesh_coordinates_for_matlab );
+        solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown response for mesh coordinates"
+                "for matlab (yes or no): %s\n",
+                mesh_coordinates_for_matlab );
     }
 
     if ( strcasecmp(include_buildings, "yes") == 0 ) {
@@ -962,6 +1029,16 @@ static int32_t parse_parameters( const char* numericalin )
         solver_abort( __FUNCTION_NAME, NULL,
                 "Unknown response for including buildings (yes or no): %s\n",
                 include_buildings );
+    }
+
+    if ( strcasecmp(use_parametricq, "yes") == 0 ) {
+        have_parametricq = YES;
+    } else if ( strcasecmp(use_parametricq, "no") == 0 ) {
+        have_parametricq = NO;
+    } else {
+        solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown response for use new q factor (yes or no): %s\n",
+                use_parametricq );
     }
 
     if ( strcasecmp(implement_drm, "yes") == 0 ) {
@@ -984,43 +1061,110 @@ static int32_t parse_parameters( const char* numericalin )
                 use_infinite_qk);
     }
 
+    if ( strcasecmp(include_topography, "yes") == 0 ) {
+        haveTopography = YES;
+    } else if ( strcasecmp(include_topography, "no") == 0 ) {
+        haveTopography = NO;
+    } else {
+        solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown response for include_topography (yes or no): %s\n",
+                include_topography );
+    }
+
+    if ( strcasecmp(include_incident_planewaves, "yes") == 0 ) {
+        includePlaneWaves = YES;
+    } else if ( strcasecmp(include_incident_planewaves, "no") == 0 ) {
+        includePlaneWaves = NO;
+    } else {
+        solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown response for include_incident_planewaves (yes or no): %s\n",
+                include_incident_planewaves );
+    }
+
+    if ( strcasecmp(include_hmgHalfSpace, "yes") == 0 ) {
+        includeHmgHalfSpace = YES;
+    } else if ( strcasecmp(include_hmgHalfSpace, "no") == 0 ) {
+        includeHmgHalfSpace = NO;
+    } else {
+        solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown response for include_hmg_halfspace (yes or no): %s\n",
+                include_hmgHalfSpace );
+    }
+
+    if ( strcasecmp(IstanbulModel, "yes") == 0 ) {
+        includeIstanbulMatmodel = YES;
+    } else if ( strcasecmp(IstanbulModel, "no") == 0 ) {
+        includeIstanbulMatmodel = NO;
+    } else {
+        solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown response for Istanbul_material_model (yes or no): %s\n",
+                includeIstanbulMatmodel );
+    }
+
+     /* read domain corners */
+    int iCorner;
+    double *auxiliar;
+    auxiliar = (double *)malloc(sizeof(double)*8);
+
+    if ( parsedarray( fp, "domain_surface_corners", 8, auxiliar ) != 0) {
+    solver_abort( __FUNCTION_NAME, NULL,
+              "Error parsing domain_surface_corners field from %s\n",
+              numericalin);
+    }
+
+    for ( iCorner = 0; iCorner < 4; iCorner++){
+        Param.theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
+        Param.theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
+    }
+    free(auxiliar);
+
+
+    fclose( fp );
+
+    /* Check whether a profile will be used and init global flag to YES */
+    if ( strcasecmp(Param.cvmdb_input_file, "profile") == 0 ) {
+        Param.useProfile = YES;
+    }
+
     /* Init the static global variables */
 
     Param.theRegionLat      = region_origin_latitude_deg;
     Param.theRegionLong     = region_origin_longitude_deg ;
     Param.theRegionDepth    = region_depth_shallow_m ;
-
-    Param.theVsCut	      = vscut;
-    Param.theFactor	      = freq * samples;
+    Param.theVsCut        = vscut;
+    Param.theQConstant    = qconstant;
+    Param.theQAlpha       = qalpha;
+    Param.theQBeta        = qbeta;
+    Param.theFactor       = freq * samples;
     Param.theFreq         = freq;
-    Param.theFreq_Vel	  = freq_vel;
-    Param.theDeltaT	      = deltaT;
+    Param.theFreq_Vel     = freq_vel;
+    Param.theDeltaT       = deltaT;
     Param.theDeltaTSquared  = deltaT * deltaT;
-    Param.theStartT	      = startT;
+    Param.theStartT       = startT;
     Param.theEndT           = endT;
     Param.theTotalSteps     = (int)(((endT - startT) / deltaT));
 
-    Param.theDomainX	      = region_length_north_m;
-    Param.theDomainY	      = region_length_east_m;
+    Param.theDomainX          = region_length_north_m;
+    Param.theDomainY          = region_length_east_m;
     Param.region_depth_deep_m = region_depth_deep_m;
-    Param.theDomainZ	      = region_depth_deep_m - region_depth_shallow_m;
+    Param.theDomainZ          = region_depth_deep_m - region_depth_shallow_m;
     Param.theDomainAzimuth  = region_azimuth_leftface_deg;
     Param.theTypeOfDamping  = typeOfDamping;
     Param.useInfQk          = useInfQk;
 
     Param.theRate           = rate;
 
-    Param.theNumberOfPlanes	      = number_output_planes;
-    Param.theNumberOfStations	      = number_output_stations;
+    Param.theNumberOfPlanes       = number_output_planes;
+    Param.theNumberOfStations         = number_output_stations;
 
     Param.theSofteningFactor        = softening_factor;
     Param.theStepMeshingFactor     = step_meshing;
-    Param.theThresholdDamping	      = threshold_damping;
-    Param.theThresholdVpVs	      = threshold_VpVs;
+    Param.theThresholdDamping         = threshold_damping;
+    Param.theThresholdVpVs        = threshold_VpVs;
     Param.theDampingStatisticsFlag  = damping_statistics;
 
     Param.theCheckPointingRate      = checkpointing_rate;
-    Param.theUseCheckPoint	      = use_checkpoint;
+    Param.theUseCheckPoint        = use_checkpoint;
 
     Param.includeNonlinearAnalysis  = includeNonlinear;
     Param.theStiffness              = stiffness_method;
@@ -1030,10 +1174,20 @@ static int32_t parse_parameters( const char* numericalin )
     Param.printStationAccelerations = printStationAccs;
 
     Param.includeBuildings          = have_buildings;
+    Param.useParametricQ            = have_parametricq;
 
     Param.storeMeshCoordinatesForMatlab  = meshCoordinatesForMatlab;
 
     Param.drmImplement              = implementdrm;
+
+    Param.includeTopography         = haveTopography;
+
+    Param.includeIncidentPlaneWaves = includePlaneWaves;
+
+    Param.includeHomogeneousHalfSpace = includeHmgHalfSpace;
+
+    Param.IstanbulMaterialModel       = includeIstanbulMatmodel ;
+
 
     strcpy( Param.theCheckPointingDirOut, checkpoint_path );
 
@@ -1049,7 +1203,15 @@ static int32_t parse_parameters( const char* numericalin )
     monitor_print("Printing accelerations on stations: %s\n", print_station_accelerations);
     monitor_print("Mesh Coordinates For Matlab:        %s\n", mesh_coordinates_for_matlab);
     monitor_print("cvmdb_input_file:                   %s\n", Param.cvmdb_input_file);
-    monitor_print("Implement drm:      	               %s\n", implement_drm);
+    monitor_print("Implement drm:                      %s\n", implement_drm);
+    monitor_print("Include Topography:                 %s\n", include_topography);
+    monitor_print("Include Incident Plane Waves:       %s\n", include_incident_planewaves);
+    monitor_print("Include Homogeneous Halfspace:      %s\n", include_hmgHalfSpace);
+    monitor_print("Include Istanbul Material model:    %s\n", IstanbulModel);
+    monitor_print("Use Parametric Q factor:            %s\n", use_parametricq);
+    monitor_print("Constant value of Q factor:         %f\n", Param.theQConstant);
+    monitor_print("Alpha value of Q factor:            %f\n", Param.theQAlpha);
+    monitor_print("Beta value of Q factor:             %f\n", Param.theQBeta);
     monitor_print("\n-------------------------------------------------\n\n");
 
     fflush(Param.theMonitorFileFp);
@@ -1058,8 +1220,99 @@ static int32_t parse_parameters( const char* numericalin )
 }
 
 
-
 /*-----------Mesh generation related routines------------------------------*/
+
+/* In case a profile is used... */
+
+typedef enum {
+  PROFILE_VP = 0, PROFILE_VS, PROFILE_RHO, PROFILE_QP, PROFILE_QS
+} profile_flag_t;
+
+/**
+ * Interpolates the values of the profile property given the corresponding flag
+ * and the indices in the tables.
+ *
+ * @return float of property
+ */
+float interpolate_profile_property(double depth, int lowerIndex, int upperIndex, int flag) {
+
+    static const char* fname = __FUNCTION_NAME;
+    double* theProfileProperty = NULL;
+    double  theProperty;
+
+    switch (flag) {
+        case PROFILE_VP:
+            theProfileProperty = Param.theProfileVp;
+            break;
+        case PROFILE_VS:
+            theProfileProperty = Param.theProfileVs;
+            break;
+        case PROFILE_RHO:
+            theProfileProperty = Param.theProfileRho;
+            break;
+        case PROFILE_QP:
+            theProfileProperty = Param.theProfileQp;
+            break;
+        case PROFILE_QS:
+            theProfileProperty = Param.theProfileQs;
+            break;
+        default:
+            solver_abort(fname, NULL, "Error on interpolation of profile properties\n");
+    }
+   /* uncomment if linear interpolation is needed
+    theProperty = theProfileProperty[lowerIndex]
+                + ( depth - Param.theProfileZ[lowerIndex] )
+                * ( theProfileProperty[upperIndex] - theProfileProperty[lowerIndex] )
+                / ( Param.theProfileZ[upperIndex] - Param.theProfileZ[lowerIndex] ); */
+
+    theProperty = theProfileProperty[lowerIndex];
+
+
+    return (float)theProperty;
+}
+
+/**
+ * Finds the indices between which the depth queried is located and calls
+ * interpolate_profile to return the properties
+ *
+ * @return 0 on success
+ * @return 1 on failure
+ */
+int profile_query(double depth, cvmpayload_t* props) {
+
+    int i, last;
+
+    last = Param.theNumberOfLayers - 1;
+
+    if ( depth < 0 ) return 1;
+
+    if ( depth >= Param.theProfileZ[last] ) {
+        props->Vp  = Param.theProfileVp[last];
+        props->Vs  = Param.theProfileVs[last];
+        props->rho = Param.theProfileRho[last];
+        props->Qp  = Param.theProfileQp[last];
+        props->Qs  = Param.theProfileQs[last];
+        return 0;
+    }
+
+    for (i = 0; i < last; i++) {
+
+        if ( (depth >= Param.theProfileZ[i]) && (depth < Param.theProfileZ[i+1]) ) {
+
+            props->Vp  = interpolate_profile_property(depth, i, i+1, PROFILE_VP );
+            props->Vs  = interpolate_profile_property(depth, i, i+1, PROFILE_VS );
+            props->rho = interpolate_profile_property(depth, i, i+1, PROFILE_RHO);
+            props->Qp = interpolate_profile_property(depth, i, i+1, PROFILE_QP);
+            props->Qs = interpolate_profile_property(depth, i, i+1, PROFILE_QS);
+
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/* In case an etree is used...*/
 
 static void  open_cvmdb(void){
 
@@ -1072,18 +1325,18 @@ static void  open_cvmdb(void){
     Global.theCVMEp = etree_open(Param.cvmdb_input_file, O_RDONLY, CVMBUFSIZE, 0, 0 );
 
     if (Global.theCVMEp == NULL) {
-	fprintf( stderr, "Thread %d: open_cvmdb: error opening CVM etree %s\n",
-		 Global.myID, Param.cvmdb_input_file );
-	MPI_Abort(MPI_COMM_WORLD, ERROR );
-	exit( 1 );
+    fprintf( stderr, "Thread %d: open_cvmdb: error opening CVM etree %s\n",
+         Global.myID, Param.cvmdb_input_file );
+    MPI_Abort(MPI_COMM_WORLD, ERROR );
+    exit( 1 );
     }
 
     dbctl_t  *myctl;
     /* Obtain the material database application control/meta data */
     if ((myctl = cvm_getdbctl(Global.theCVMEp)) == NULL) {
-    	fprintf(stderr, "Error reading CVM etree control data\n");
-    	MPI_Abort(MPI_COMM_WORLD, ERROR );
-    	exit( 1 );
+        fprintf(stderr, "Error reading CVM etree control data\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR );
+        exit( 1 );
     }
 
     /* Check the ranges of the mesh and the scope of the CVM etree */
@@ -1099,15 +1352,15 @@ static void  open_cvmdb(void){
          myctl->region_length_east_m / DIST1LON)) {
         fprintf(stderr, "Mesh area out of the CVM etree\n");
         MPI_Abort(MPI_COMM_WORLD, ERROR );
-    	exit( 1 );
+        exit( 1 );
     }
 
     /* Compute the coordinates of the origin of the mesh coordinate
        system in the CVM etree domain coordinate system */
     Global.theXForMeshOrigin = (Param.theRegionLat
-				- myctl->region_origin_latitude_deg) * DIST1LAT;
+                - myctl->region_origin_latitude_deg) * DIST1LAT;
     Global.theYForMeshOrigin = (Param.theRegionLong
-				- myctl->region_origin_longitude_deg) * DIST1LON;
+                - myctl->region_origin_longitude_deg) * DIST1LON;
     Global.theZForMeshOrigin = Param.theRegionDepth - myctl->region_depth_shallow_m;
 
     /* Free memory used by myctl */
@@ -1126,7 +1379,7 @@ static void  open_cvmdb(void){
     Global.theZForMeshOrigin = double_message_extra[2];
 
 #else
-    strcpy(Param.theCVMFlatFile, cvmdb_input_file);
+    strcpy(Param.theCVMFlatFile, Param.cvmdb_input_file);
 #endif
 
 }
@@ -1155,7 +1408,7 @@ replicateDB(const char *dbname)
     char  curdir[256];
     destdir = getenv( "CVM_DESTDIR" );
     if (destdir == NULL) { /* then use current directory */
-	destdir = getcwd( curdir, 256 );
+    destdir = getcwd( curdir, 256 );
     }
 #else
     destdir = CVM_DESTDIR;
@@ -1178,117 +1431,117 @@ replicateDB(const char *dbname)
      */
 #ifndef SCEC
     if (chdir(destdir) != 0) {
-	fprintf(stderr, "Thread %d: replicateDB: cannot chdir to %s\n",
-		Global.myID, destdir);
-	MPI_Abort(MPI_COMM_WORLD, ERROR);
-	exit(1);
+    fprintf(stderr, "Thread %d: replicateDB: cannot chdir to %s\n",
+        Global.myID, destdir);
+    MPI_Abort(MPI_COMM_WORLD, ERROR);
+    exit(1);
     }
 
     MPI_Barrier(comm_solver);
 
     /* Replicate the material database among the processors */
     if (Global.myID % PROCPERNODE != 0) {
-	MPI_Comm_split(comm_solver, MPI_UNDEFINED, Global.myID, &replica_comm);
+    MPI_Comm_split(comm_solver, MPI_UNDEFINED, Global.myID, &replica_comm);
 
     } else {
-	int replica_id;
-	off_t filesize, remains, batchsize;
-	void *filebuf;
-	int src_fd = -1, dest_fd;
+    int replica_id;
+    off_t filesize, remains, batchsize;
+    void *filebuf;
+    int src_fd = -1, dest_fd;
 
-	MPI_Comm_split(comm_solver, 0, Global.myID, &replica_comm);
-	MPI_Comm_rank(replica_comm, &replica_id);
+    MPI_Comm_split(comm_solver, 0, Global.myID, &replica_comm);
+    MPI_Comm_rank(replica_comm, &replica_id);
 
-	if (replica_id == 0) {
-	    struct stat statbuf;
+    if (replica_id == 0) {
+        struct stat statbuf;
 
 #ifndef CVM_SRCPATH
-	    srcpath = getenv("CVM_SRCPATH");
+        srcpath = getenv("CVM_SRCPATH");
 #else
-	    srcpath = CVM_SRCPATH;
+        srcpath = CVM_SRCPATH;
 #endif
 
-	    if (stat(srcpath, &statbuf) != 0) {
-		fprintf(stderr,
-			"Thread 0: replicateDB: Cannot get stat of %s\n",
-			srcpath);
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
+        if (stat(srcpath, &statbuf) != 0) {
+        fprintf(stderr,
+            "Thread 0: replicateDB: Cannot get stat of %s\n",
+            srcpath);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
 
-	    filesize = statbuf.st_size;
-	    src_fd = open(srcpath, O_RDONLY);
-	    if (src_fd == -1) {
-		fprintf(stderr,
-			"Thread 0: replicateDB: Cannot open cvm source db\n");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
-	}
+        filesize = statbuf.st_size;
+        src_fd = open(srcpath, O_RDONLY);
+        if (src_fd == -1) {
+        fprintf(stderr,
+            "Thread 0: replicateDB: Cannot open cvm source db\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
+    }
 
 
-	MPI_Bcast(&filesize, sizeof(off_t), MPI_CHAR, 0, replica_comm);
-	theDBSize = filesize;
+    MPI_Bcast(&filesize, sizeof(off_t), MPI_CHAR, 0, replica_comm);
+    theDBSize = filesize;
 
-	if ((filebuf = malloc(FILEBUFSIZE)) == NULL) {
-	    fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
-	    fprintf(stderr, "run out of memory while ");
-	    fprintf(stderr, "preparing to receive material database\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    if ((filebuf = malloc(FILEBUFSIZE)) == NULL) {
+        fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
+        fprintf(stderr, "run out of memory while ");
+        fprintf(stderr, "preparing to receive material database\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	/* Everyone opens a replicate db */
-	dest_fd = open(dbname, O_CREAT|O_TRUNC|O_WRONLY, S_IRUSR|S_IWUSR);
-	if (dest_fd == -1) {
-	    fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
-	    fprintf(stderr, "cannot create replica database\n");
-	    perror("open");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    /* Everyone opens a replicate db */
+    dest_fd = open(dbname, O_CREAT|O_TRUNC|O_WRONLY, S_IRUSR|S_IWUSR);
+    if (dest_fd == -1) {
+        fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
+        fprintf(stderr, "cannot create replica database\n");
+        perror("open");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	remains = filesize;
-	while (remains > 0) {
-	    batchsize = (remains > FILEBUFSIZE) ? FILEBUFSIZE : remains;
+    remains = filesize;
+    while (remains > 0) {
+        batchsize = (remains > FILEBUFSIZE) ? FILEBUFSIZE : remains;
 
-	    if (replica_id == 0) {
-		if (read(src_fd, filebuf, batchsize) !=	 batchsize) {
-		    fprintf(stderr, "Thread 0: replicateDB: ");
-		    fprintf(stderr, "Cannot read database\n");
-		    perror("read");
-		    MPI_Abort(MPI_COMM_WORLD, ERROR);
-		    exit(1);
-		}
-	    }
+        if (replica_id == 0) {
+        if (read(src_fd, filebuf, batchsize) !=  batchsize) {
+            fprintf(stderr, "Thread 0: replicateDB: ");
+            fprintf(stderr, "Cannot read database\n");
+            perror("read");
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
+        }
 
-	    MPI_Bcast(filebuf, batchsize, MPI_CHAR, 0, replica_comm);
+        MPI_Bcast(filebuf, batchsize, MPI_CHAR, 0, replica_comm);
 
-	    if (write(dest_fd, filebuf, batchsize) != batchsize) {
-		fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
-		fprintf(stderr, "Cannot write replica database\n");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
+        if (write(dest_fd, filebuf, batchsize) != batchsize) {
+        fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
+        fprintf(stderr, "Cannot write replica database\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
 
-	    remains -= batchsize;
-	}
+        remains -= batchsize;
+    }
 
-	free(filebuf);
+    free(filebuf);
 
-	if (close(dest_fd) != 0) {
-	    fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
-	    fprintf(stderr, "cannot close replica database\n");
-	    perror("close");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    if (close(dest_fd) != 0) {
+        fprintf(stderr, "Thread %d: replicateDB: ", Global.myID);
+        fprintf(stderr, "cannot close replica database\n");
+        perror("close");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	if (replica_id == 0) {
-	    close(src_fd);
-	}
+    if (replica_id == 0) {
+        close(src_fd);
+    }
 
-	MPI_Comm_free(&replica_comm);
+    MPI_Comm_free(&replica_comm);
 
     } /* processors participating in the replication */
 
@@ -1307,10 +1560,11 @@ replicateDB(const char *dbname)
 static void
 setrec( octant_t* leaf, double ticksize, void* data )
 {
-    double x_m, y_m, z_m;	/* x:south-north, y:east-west, z:depth */
+    double x_m, y_m, z_m;   /* x:south-north, y:east-west, z:depth */
     tick_t halfticks;
-    cvmpayload_t g_props;	/* cvm record with ground properties */
-    cvmpayload_t g_props_min;	/* cvm record with the min Vs found */
+    cvmpayload_t g_props;   /* cvm record with ground properties */
+    cvmpayload_t g_props_min;   /* cvm record with the min Vs found */
+    vector3D_t Istmatmodel_origin;
 
     int i_x, i_y, i_z, n_points = 3;
     double points[3];
@@ -1325,9 +1579,22 @@ setrec( octant_t* leaf, double ticksize, void* data )
     halfticks = (tick_t)1 << (PIXELLEVEL - leaf->level - 1);
     edata->edgesize = ticksize * halfticks * 2;
 
+    if ( Param.IstanbulMaterialModel == YES ) {
+        Istmatmodel_origin = compute_domain_coords_linearinterp(28.675,40.9565,
+                                        Param.theSurfaceCornersLong,
+                                        Param.theSurfaceCornersLat,
+                                        Param.theDomainY,Param.theDomainX);
+    }
+
     /* Check for buildings and proceed according to the buildings setrec */
-    if ( Param.includeBuildings == YES ) {
-		if ( bldgs_setrec( leaf, ticksize, edata, Global.theCVMEp,Global.theXForMeshOrigin,Global.theYForMeshOrigin,Global.theZForMeshOrigin ) ) {
+    if ( ( Param.includeBuildings == YES ) && (Param.useProfile == NO) ) {
+        if ( bldgs_setrec( leaf, ticksize, edata, Global.theCVMEp,Global.theXForMeshOrigin,Global.theYForMeshOrigin,Global.theZForMeshOrigin ) ) {
+            return;
+        }
+    }
+
+    if ( Param.includeTopography == YES ) {
+        if ( topo_setrec( leaf, ticksize, edata, Global.theCVMEp ) ) {
             return;
         }
     }
@@ -1338,43 +1605,95 @@ setrec( octant_t* leaf, double ticksize, void* data )
 
     for ( i_x = 0; i_x < n_points; i_x++ ) {
 
-	x_m = (Global.theXForMeshOrigin
-	       + (leaf->lx + points[i_x] * halfticks) * ticksize);
+    x_m = (Global.theXForMeshOrigin
+           + (leaf->lx + points[i_x] * halfticks) * ticksize);
 
-	for ( i_y = 0; i_y < n_points; i_y++ ) {
+    for ( i_y = 0; i_y < n_points; i_y++ ) {
 
-	    y_m  = Global.theYForMeshOrigin
-		+ (leaf->ly + points[i_y] * halfticks) * ticksize;
+        y_m  = Global.theYForMeshOrigin
+        + (leaf->ly + points[i_y] * halfticks) * ticksize;
 
-	    for ( i_z = 0; i_z < n_points; i_z++) {
+        for ( i_z = 0; i_z < n_points; i_z++) {
 
-		z_m = Global.theZForMeshOrigin
-		    + (leaf->lz +  points[i_z] * halfticks) * ticksize;
+        z_m = Global.theZForMeshOrigin
+            + (leaf->lz +  points[i_z] * halfticks) * ticksize;
 
-		/* Shift the domain if buildings are considered */
-		if ( Param.includeBuildings == YES ) {
+        /* Shift the domain if topography with squashed etree is considered */
+        if ( ( Param.includeTopography == YES ) && ( get_theetree_type() == SQD )  ) {
+                    z_m -=   point_elevation ( x_m, y_m ) ;
+                    if ( z_m < 0 ) /* get air properties */
+                    {
+                        edata_t* airedata = (edata_t*)data;
+                        get_airprops_topo( airedata );
+                        g_props.Vp  = airedata->Vp;
+                        g_props.Vs  = airedata->Vs;
+                        g_props.rho = airedata->rho;
+
+                        if ( g_props.Vs < g_props_min.Vs ) {
+                            /* assign minimum value of vs to produce elements
+                             * that are small enough to rightly represent the model */
+                            g_props_min = g_props;
+                        }
+
+                        continue;
+                    }
+        }
+
+        /* Shift the domain if buildings are considered */
+        if ( Param.includeBuildings == YES ) {
                     z_m -= get_surface_shift();
-		}
+        }
 
-		res = cvm_query( Global.theCVMEp, y_m, x_m, z_m, &g_props );
+        if ( belongs2hmgHalfspace( y_m, x_m, z_m ) )
+            res = get_halfspaceproperties( &g_props );
+        else if ( Param.IstanbulMaterialModel == YES ) {
 
-		if (res != 0) {
-		    continue;
-		}
+            double output[4]={0.0}, x_rel, y_rel;
 
-		if ( g_props.Vs < g_props_min.Vs ) {
-		    /* assign minimum value of vs to produce elements
-		     * that are small enough to rightly represent the model */
-		    g_props_min = g_props;
-		}
+            x_rel = 4536400.00 + x_m - Istmatmodel_origin.x[0] ;
+            y_rel =  388500.00 + y_m - Istmatmodel_origin.x[1];
 
-		if (g_props.Vs <= Param.theVsCut) {
-		    /* stop early if needed, completely break out of all
-		     * the loops, the label is just outside the loop */
-		    goto outer_loop_label;
-		}
-	    }
-	}
+            res = material_property_relative_V10_local( y_rel, x_rel, -z_m, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
+            g_props.Qs  = output[0] * 0.1;  // Same simple expression as in la Habra runs
+            g_props.Qp  = 2.0 * g_props.Qs;
+
+            if (res != 0) {
+                if (Param.useProfile == NO) {
+                    res = cvm_query( Global.theCVMEp, y_m, x_m, z_m, &g_props );
+                } else {
+                    res = profile_query(z_m, &g_props);
+                }
+            } else {
+                g_props.Vs  = output[0];
+                g_props.Vp  = output[1];
+                g_props.rho = output[2];
+            }
+
+        } else if (Param.useProfile == NO) {
+            res = cvm_query( Global.theCVMEp, y_m, x_m, z_m, &g_props );
+        } else {
+            res = profile_query(z_m, &g_props);
+        }
+
+
+        if (res != 0) {
+            continue;
+        }
+
+        if ( g_props.Vs < g_props_min.Vs ) {
+            /* assign minimum value of vs to produce elements
+             * that are small enough to rightly represent the model */
+            g_props_min = g_props;
+        }
+
+        if (g_props.Vs <= Param.theVsCut) {
+            /* stop early if needed, completely break out of all
+             * the loops, the label is just outside the loop */
+            goto outer_loop_label;
+        }
+        }
+    }
+
     }
  outer_loop_label: /* in order to completely break out from the inner loop */
 
@@ -1383,14 +1702,14 @@ setrec( octant_t* leaf, double ticksize, void* data )
     edata->rho = g_props_min.rho;
 
     if (res != 0 && g_props_min.Vs == DBL_MAX) {
-	/* all the queries failed, then center out of bound point. Set Vs
-	 * to force split */
-	edata->Vs = Param.theFactor * edata->edgesize / 2;
-    } else if (edata->Vs <= Param.theVsCut) {	/* adjust Vs and Vp */
-	double VpVsRatio = edata->Vp / edata->Vs;
+    /* all the queries failed, then center out of bound point. Set Vs
+     * to force split */
+    edata->Vs = Param.theFactor * edata->edgesize / 2;
+    } else if (edata->Vs <= Param.theVsCut) {   /* adjust Vs and Vp */
+    double VpVsRatio = edata->Vp / edata->Vs;
 
-	edata->Vs = Param.theVsCut;
-	edata->Vp = Param.theVsCut * VpVsRatio;
+    edata->Vs = Param.theVsCut;
+    edata->Vp = Param.theVsCut * VpVsRatio;
     }
 
     return;
@@ -1409,27 +1728,27 @@ zsearch(void *base, int32_t count, int32_t recordsize, const point_t *searchpt)
 
     found = 0;
     do {
-	if (end < start) {
-	    /* the two pointer crossed each other */
-	    offset = end;
-	    found = 1;
-	} else {
-	    const void *pivot = (char *)base + offset * recordsize;
+    if (end < start) {
+        /* the two pointer crossed each other */
+        offset = end;
+        found = 1;
+    } else {
+        const void *pivot = (char *)base + offset * recordsize;
 
-	    switch (octor_zcompare(searchpt, pivot)) {
-	    case (0): /* equal */
-		found = 1;
-		break;
-	    case (1): /* searchpoint larger than the pivot */
-		start = offset + 1;
-		offset = (start + end) / 2;
-		break;
-	    case (-1): /* searchpoint smaller than the pivot */
-		end = offset - 1;
-		offset = (start + end) / 2;
-		break;
-	    }
-	}
+        switch (octor_zcompare(searchpt, pivot)) {
+        case (0): /* equal */
+        found = 1;
+        break;
+        case (1): /* searchpoint larger than the pivot */
+        start = offset + 1;
+        offset = (start + end) / 2;
+        break;
+        case (-1): /* searchpoint smaller than the pivot */
+        end = offset - 1;
+        offset = (start + end) / 2;
+        break;
+        }
+    }
     } while (!found);
 
     return offset;
@@ -1441,421 +1760,236 @@ static cvmrecord_t *sliceCVM(const char *cvm_flatfile)
     cvmrecord_t *cvmrecord;
     int32_t bufferedbytes, bytecount, recordcount;
     if (Global.myID == Global.theGroupSize - 1) {
-	/* the last processor reads data and
-	   distribute to other processors*/
+    /* the last processor reads data and
+       distribute to other processors*/
 
-	struct timeval starttime, endtime;
-	float iotime = 0, memmovetime = 0;
-	MPI_Request *isendreqs;
-	MPI_Status *isendstats;
-	FILE *fp;
-	int fd, procid;
-	struct stat statbuf;
-	void *maxbuf;
-	const point_t *intervaltable;
-	off_t bytesent;
-	int32_t offset;
-	const int maxcount =  (1 << 29) / sizeof(cvmrecord_t);
-	const int maxbufsize = maxcount * sizeof(cvmrecord_t);
+    struct timeval starttime, endtime;
+    float iotime = 0, memmovetime = 0;
+    MPI_Request *isendreqs;
+    MPI_Status *isendstats;
+    FILE *fp;
+    int fd, procid;
+    struct stat statbuf;
+    void *maxbuf;
+    const point_t *intervaltable;
+    off_t bytesent;
+    int32_t offset;
+    const int maxcount =  (1 << 29) / sizeof(cvmrecord_t);
+    const int maxbufsize = maxcount * sizeof(cvmrecord_t);
 
-	fp = fopen(cvm_flatfile, "r");
-	if (fp == NULL) {
-	    fprintf(stderr, "Thread %d: Cannot open flat CVM file\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    fp = fopen(cvm_flatfile, "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Thread %d: Cannot open flat CVM file\n", Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	fd = fileno(fp);
-	if (fstat(fd, &statbuf) != 0) {
-	    fprintf(stderr, "Thread %d: Cannot get the status of CVM file\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    fd = fileno(fp);
+    if (fstat(fd, &statbuf) != 0) {
+        fprintf(stderr, "Thread %d: Cannot get the status of CVM file\n",
+            Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	intervaltable = octor_getintervaltable(Global.myOctree);
+    intervaltable = octor_getintervaltable(Global.myOctree);
 
-	/*
-	for (procid = 0; procid <= Global.myID; procid++) {
-	    fprintf(stderr, "interval[%d] = {%d, %d, %d}\n", procid,
-		    intervaltable[procid].x << 1, intervaltable[procid].y << 1,
-		    intervaltable[procid].z << 1);
-	}
-	*/
+    /*
+    for (procid = 0; procid <= Global.myID; procid++) {
+        fprintf(stderr, "interval[%d] = {%d, %d, %d}\n", procid,
+            intervaltable[procid].x << 1, intervaltable[procid].y << 1,
+            intervaltable[procid].z << 1);
+    }
+    */
 
-	bytesent = 0;
-	maxbuf = malloc(maxbufsize) ;
-	if (maxbuf == NULL) {
-	    fprintf(stderr, "Thread %d: Cannot allocate send buffer\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    bytesent = 0;
+    maxbuf = malloc(maxbufsize) ;
+    if (maxbuf == NULL) {
+        fprintf(stderr, "Thread %d: Cannot allocate send buffer\n", Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	isendreqs = (MPI_Request *)malloc(sizeof(MPI_Request) * Global.theGroupSize);
-	isendstats = (MPI_Status *)malloc(sizeof(MPI_Status) * Global.theGroupSize);
-	if ((isendreqs == NULL) || (isendstats == NULL)) {
-	    fprintf(stderr, "Thread %d: Cannot allocate isend controls\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    isendreqs = (MPI_Request *)malloc(sizeof(MPI_Request) * Global.theGroupSize);
+    isendstats = (MPI_Status *)malloc(sizeof(MPI_Status) * Global.theGroupSize);
+    if ((isendreqs == NULL) || (isendstats == NULL)) {
+        fprintf(stderr, "Thread %d: Cannot allocate isend controls\n",
+            Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	/* Try to read max number of CVM records as allowed */
-	//	gettimeofday(&starttime, NULL);
-	recordcount = fread(maxbuf, sizeof(cvmrecord_t),
-			    maxbufsize / sizeof(cvmrecord_t), fp);
-	//	gettimeofday(&endtime, NULL);
+    /* Try to read max number of CVM records as allowed */
+    //  gettimeofday(&starttime, NULL);
+    recordcount = fread(maxbuf, sizeof(cvmrecord_t),
+                maxbufsize / sizeof(cvmrecord_t), fp);
+    //  gettimeofday(&endtime, NULL);
 
-	iotime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
-	    + (endtime.tv_usec - starttime.tv_usec) / 1000.0;
+    iotime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
+        + (endtime.tv_usec - starttime.tv_usec) / 1000.0;
 
-	if (recordcount != maxbufsize / sizeof(cvmrecord_t)) {
-	    fprintf(stderr, "Thread %d: Cannot read-init buffer\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    if (recordcount != maxbufsize / sizeof(cvmrecord_t)) {
+        fprintf(stderr, "Thread %d: Cannot read-init buffer\n", Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	/* start with proc 0 */
-	procid = 0;
+    /* start with proc 0 */
+    procid = 0;
 
-	while (procid < Global.myID) { /* repeatedly fill the buffer */
-	    point_t searchpoint, *point;
-	    int newreads;
-	    int isendcount = 0;
+    while (procid < Global.myID) { /* repeatedly fill the buffer */
+        point_t searchpoint, *point;
+        int newreads;
+        int isendcount = 0;
 
-	    /* we have recordcount to work with */
-	    cvmrecord = (cvmrecord_t *)maxbuf;
+        /* we have recordcount to work with */
+        cvmrecord = (cvmrecord_t *)maxbuf;
 
-	    while (procid < Global.myID) { /* repeatedly send out data */
+        while (procid < Global.myID) { /* repeatedly send out data */
 
-		searchpoint.x = intervaltable[procid + 1].x << 1;
-		searchpoint.y = intervaltable[procid + 1].y << 1;
-		searchpoint.z = intervaltable[procid + 1].z << 1;
+        searchpoint.x = intervaltable[procid + 1].x << 1;
+        searchpoint.y = intervaltable[procid + 1].y << 1;
+        searchpoint.z = intervaltable[procid + 1].z << 1;
 
-		offset = zsearch(cvmrecord, recordcount, Global.theCVMRecordSize,
-				 &searchpoint);
+        offset = zsearch(cvmrecord, recordcount, Global.theCVMRecordSize,
+                 &searchpoint);
 
-		point = (point_t *)(cvmrecord + offset);
+        point = (point_t *)(cvmrecord + offset);
 
-		if ((point->x != searchpoint.x) ||
-		    (point->y != searchpoint.y) ||
-		    (point->z != searchpoint.z)) {
-		    break;
-		} else {
-		    bytecount = offset * sizeof(cvmrecord_t);
-		    MPI_Isend(cvmrecord, bytecount, MPI_CHAR, procid,
-			      CVMRECORD_MSG, comm_solver,
-			      &isendreqs[isendcount]);
-		    isendcount++;
+        if ((point->x != searchpoint.x) ||
+            (point->y != searchpoint.y) ||
+            (point->z != searchpoint.z)) {
+            break;
+        } else {
+            bytecount = offset * sizeof(cvmrecord_t);
+            MPI_Isend(cvmrecord, bytecount, MPI_CHAR, procid,
+                  CVMRECORD_MSG, comm_solver,
+                  &isendreqs[isendcount]);
+            isendcount++;
 
-		    /*
-		      fprintf(stderr,
-		      "Procid = %d offset = %qd bytecount = %d\n",
-		      procid, (int64_t)bytesent, bytecount);
-		    */
+            /*
+              fprintf(stderr,
+              "Procid = %d offset = %qd bytecount = %d\n",
+              procid, (int64_t)bytesent, bytecount);
+            */
 
-		    bytesent += bytecount;
+            bytesent += bytecount;
 
-		    /* prepare for the next processor */
-		    recordcount -= offset;
-		    cvmrecord = (cvmrecord_t *)point;
-		    procid++;
-		}
-	    }
+            /* prepare for the next processor */
+            recordcount -= offset;
+            cvmrecord = (cvmrecord_t *)point;
+            procid++;
+        }
+        }
 
-	    /* Wait till the data in the buffer has been sent */
-	    MPI_Waitall(isendcount, isendreqs, isendstats);
+        /* Wait till the data in the buffer has been sent */
+        MPI_Waitall(isendcount, isendreqs, isendstats);
 
-	    /* Move residual data to the beginning of the buffer
-	       and try to fill the newly free space */
-	    bufferedbytes = sizeof(cvmrecord_t) * recordcount;
+        /* Move residual data to the beginning of the buffer
+           and try to fill the newly free space */
+        bufferedbytes = sizeof(cvmrecord_t) * recordcount;
 
-	    // gettimeofday(&starttime, NULL);
-	    memmove(maxbuf, cvmrecord, bufferedbytes);
-	    // gettimeofday(&endtime, NULL);
-	    memmovetime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
-		+ (endtime.tv_usec - starttime.tv_usec) / 1000.0;
+        // gettimeofday(&starttime, NULL);
+        memmove(maxbuf, cvmrecord, bufferedbytes);
+        // gettimeofday(&endtime, NULL);
+        memmovetime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
+        + (endtime.tv_usec - starttime.tv_usec) / 1000.0;
 
-	    // gettimeofday(&starttime, NULL);
-	    newreads = fread((char *)maxbuf + bufferedbytes,
-			     sizeof(cvmrecord_t), maxcount - recordcount, fp);
-	    // gettimeofday(&endtime, NULL);
-	    iotime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
-		+ (endtime.tv_usec - starttime.tv_usec) / 1000.0;
+        // gettimeofday(&starttime, NULL);
+        newreads = fread((char *)maxbuf + bufferedbytes,
+                 sizeof(cvmrecord_t), maxcount - recordcount, fp);
+        // gettimeofday(&endtime, NULL);
+        iotime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
+        + (endtime.tv_usec - starttime.tv_usec) / 1000.0;
 
-	    recordcount += newreads;
+        recordcount += newreads;
 
-	    if (newreads == 0)
-		break;
-	}
+        if (newreads == 0)
+        break;
+    }
 
-	free(maxbuf);
-	free(isendreqs);
-	free(isendstats);
+    free(maxbuf);
+    free(isendreqs);
+    free(isendstats);
 
-	/* I am supposed to accomodate the remaining octants */
-	bytecount = statbuf.st_size - bytesent;
+    /* I am supposed to accomodate the remaining octants */
+    bytecount = statbuf.st_size - bytesent;
 
-	cvmrecord = (cvmrecord_t *)malloc(bytecount);
-	if (cvmrecord == NULL) {
-	    fprintf(stderr, "Thread %d: out of memory\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    cvmrecord = (cvmrecord_t *)malloc(bytecount);
+    if (cvmrecord == NULL) {
+        fprintf(stderr, "Thread %d: out of memory\n", Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	/* fseek exiting the for loop has file cursor propertly */
-	if (fseeko(fp, bytesent, SEEK_SET) != 0) {
-	    fprintf(stderr, "Thread %d: fseeko failed\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    /* fseek exiting the for loop has file cursor propertly */
+    if (fseeko(fp, bytesent, SEEK_SET) != 0) {
+        fprintf(stderr, "Thread %d: fseeko failed\n", Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	//	gettimeofday(&starttime, NULL);
-	if (fread(cvmrecord, 1, bytecount, fp) != (size_t)bytecount) {
-	    fprintf(stderr, "Thread %d: fail to read the last chunk\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-	//	gettimeofday(&endtime, NULL);
-	iotime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
-	    + (endtime.tv_usec - starttime.tv_usec) / 1000.0;
+    //  gettimeofday(&starttime, NULL);
+    if (fread(cvmrecord, 1, bytecount, fp) != (size_t)bytecount) {
+        fprintf(stderr, "Thread %d: fail to read the last chunk\n",
+            Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
+    //  gettimeofday(&endtime, NULL);
+    iotime += (endtime.tv_sec - starttime.tv_sec) * 1000.0
+        + (endtime.tv_usec - starttime.tv_usec) / 1000.0;
 
-	/*
-	fprintf(stderr, "Procid = %d offset = %qd bytecount = %d\n",
-		Global.myID, (int64_t)bytesent, bytecount);
-	*/
+    /*
+    fprintf(stderr, "Procid = %d offset = %qd bytecount = %d\n",
+        Global.myID, (int64_t)bytesent, bytecount);
+    */
 
-	fclose(fp);
+    fclose(fp);
 
-	fprintf(stdout, "Read %s (%.2fMB) in %.2f seconds (%.2fMB/sec)\n",
-		cvm_flatfile, (float)statbuf.st_size / (1 << 20),
-		iotime / 1000,
-		(float)statbuf.st_size / (1 << 20) / (iotime / 1000));
+    fprintf(stdout, "Read %s (%.2fMB) in %.2f seconds (%.2fMB/sec)\n",
+        cvm_flatfile, (float)statbuf.st_size / (1 << 20),
+        iotime / 1000,
+        (float)statbuf.st_size / (1 << 20) / (iotime / 1000));
 
-	fprintf(stdout, "Memmove takes %.2f seconds\n",
-		(float)memmovetime / 1000);
+    fprintf(stdout, "Memmove takes %.2f seconds\n",
+        (float)memmovetime / 1000);
 
     } else {
-	/* wait for my turn till PE(n - 1) tells me to go ahead */
+    /* wait for my turn till PE(n - 1) tells me to go ahead */
 
-	MPI_Status status;
+    MPI_Status status;
 
-	MPI_Probe(Global.theGroupSize - 1, CVMRECORD_MSG, comm_solver, &status);
-	MPI_Get_count(&status, MPI_CHAR, &bytecount);
+    MPI_Probe(Global.theGroupSize - 1, CVMRECORD_MSG, comm_solver, &status);
+    MPI_Get_count(&status, MPI_CHAR, &bytecount);
 
-	cvmrecord = (cvmrecord_t *)malloc(bytecount);
-	if (cvmrecord == NULL) {
-	    fprintf(stderr, "Thread %d: out of memory\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    cvmrecord = (cvmrecord_t *)malloc(bytecount);
+    if (cvmrecord == NULL) {
+        fprintf(stderr, "Thread %d: out of memory\n", Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	MPI_Recv(cvmrecord, bytecount, MPI_CHAR, Global.theGroupSize - 1,
-		 CVMRECORD_MSG, comm_solver,	 &status);
+    MPI_Recv(cvmrecord, bytecount, MPI_CHAR, Global.theGroupSize - 1,
+         CVMRECORD_MSG, comm_solver,     &status);
 
     }
 
     /* Every processor should set these parameters correctly */
     Global.theCVMRecordCount = bytecount / sizeof(cvmrecord_t);
     if (Global.theCVMRecordCount * sizeof(cvmrecord_t) != (size_t)bytecount) {
-	fprintf(stderr, "Thread %d: received corrupted CVM data\n",
-		Global.myID);
-	MPI_Abort(MPI_COMM_WORLD, ERROR);
-	exit(1);
+    fprintf(stderr, "Thread %d: received corrupted CVM data\n",
+        Global.myID);
+    MPI_Abort(MPI_COMM_WORLD, ERROR);
+    exit(1);
     }
 
     return cvmrecord;
 }
-
-
-static cvmrecord_t *sliceCVM_old(const char *cvm_flatfile)
-{
-    cvmrecord_t *cvmrecord;
-    int32_t bufferedbytes, bytecount, recordcount;
-
-    if (Global.myID == Global.theGroupSize - 1) {
-	/* the last processor reads data and
-	   distribute to other processors*/
-
-	FILE *fp;
-	int fd, procid;
-	struct stat statbuf;
-	void *maxbuf;
-	const point_t *intervaltable;
-	off_t bytesent;
-	int32_t offset;
-	const int maxcount =  (1 << 29) / sizeof(cvmrecord_t);
-	const int maxbufsize = maxcount * sizeof(cvmrecord_t);
-
-	fp = fopen(cvm_flatfile, "r");
-	if (fp == NULL) {
-	    fprintf(stderr, "Thread %d: Cannot open flat CVM file\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	fd = fileno(fp);
-	if (fstat(fd, &statbuf) != 0) {
-	    fprintf(stderr, "Thread %d: Cannot get the status of CVM file\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	intervaltable = octor_getintervaltable(Global.myOctree);
-	/*
-	for (procid = 0; procid <= Global.myID; procid++) {
-	    fprintf(stderr, "interval[%d] = {%d, %d, %d}\n", procid,
-		    intervaltable[procid].x << 1, intervaltable[procid].y << 1,
-		    intervaltable[procid].z << 1);
-	}
-	*/
-
-	bytesent = 0;
-	maxbuf = malloc(maxbufsize) ;
-	if (maxbuf == NULL) {
-	    fprintf(stderr, "Thread %d: Cannot allocate send buffer\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	/* Try to read max number of CVM records as allowed */
-	recordcount = fread(maxbuf, sizeof(cvmrecord_t),
-			    maxbufsize / sizeof(cvmrecord_t), fp);
-
-	if (recordcount != maxbufsize / sizeof(cvmrecord_t)) {
-	    fprintf(stderr, "Thread %d: Cannot read-init buffer\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	/* start with proc 0 */
-	procid = 0;
-
-	while (procid < Global.myID) { /* repeatedly fill the buffer */
-	    point_t searchpoint, *point;
-	    int newreads;
-
-	    /* we have recordcount to work with */
-	    cvmrecord = (cvmrecord_t *)maxbuf;
-
-	    while (procid < Global.myID) { /* repeatedly send out data */
-		searchpoint.x = intervaltable[procid + 1].x << 1;
-		searchpoint.y = intervaltable[procid + 1].y << 1;
-		searchpoint.z = intervaltable[procid + 1].z << 1;
-
-		offset = zsearch(cvmrecord, recordcount, Global.theCVMRecordSize,
-				 &searchpoint);
-
-		point = (point_t *)(cvmrecord + offset);
-
-		if ((point->x != searchpoint.x) ||
-		    (point->y != searchpoint.y) ||
-		    (point->z != searchpoint.z)) {
-		    break;
-		} else {
-		    bytecount = offset * sizeof(cvmrecord_t);
-		    MPI_Send(cvmrecord, bytecount, MPI_CHAR, procid,
-			     CVMRECORD_MSG, comm_solver);
-		    /*
-		    fprintf(stderr,
-			    "Procid = %d offset = %qd bytecount = %d\n",
-			    procid, (int64_t)bytesent, bytecount);
-		    */
-
-		    bytesent += bytecount;
-
-		    /* prepare for the next processor */
-		    recordcount -= offset;
-		    cvmrecord = (cvmrecord_t *)point;
-		    procid++;
-		}
-	    }
-
-	    /* Move residual data to the beginning of the buffer
-	       and try to fill the newly free space */
-	    bufferedbytes = sizeof(cvmrecord_t) * recordcount;
-	    memmove(maxbuf, cvmrecord, bufferedbytes);
-	    newreads = fread((char *)maxbuf + bufferedbytes,
-			     sizeof(cvmrecord_t), maxcount - recordcount, fp);
-	    recordcount += newreads;
-
-	    if (newreads == 0)
-		break;
-	}
-
-	free(maxbuf);
-
-	/* I am supposed to accomodate the remaining octants */
-	bytecount = statbuf.st_size - bytesent;
-
-	cvmrecord = (cvmrecord_t *)malloc(bytecount);
-	if (cvmrecord == NULL) {
-	    fprintf(stderr, "Thread %d: out of memory for %d bytes\n",
-		    Global.myID, bytecount);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	/* fseek exiting the for loop has file cursor propertly */
-	if (fseeko(fp, bytesent, SEEK_SET) != 0) {
-	    fprintf(stderr, "Thread %d: fseeko failed\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	if (fread(cvmrecord, 1, bytecount, fp) != (size_t)bytecount) {
-	    fprintf(stderr, "Thread %d: fail to read the last chunk\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	/*
-	  fprintf(stderr, "Procid = %d offset = %qd bytecount = %d\n",
-	  Global.myID, (int64_t)bytesent, bytecount);
-	*/
-
-	fclose(fp);
-
-    } else {
-	/* wait for my turn till PE(n - 1) tells me to go ahead */
-
-	MPI_Status status;
-
-	MPI_Probe(Global.theGroupSize - 1, CVMRECORD_MSG, comm_solver, &status);
-	MPI_Get_count(&status, MPI_CHAR, &bytecount);
-
-	cvmrecord = (cvmrecord_t *)malloc(bytecount);
-	if (cvmrecord == NULL) {
-	    fprintf(stderr, "Thread %d: out of memory\n", Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
-
-	MPI_Recv(cvmrecord, bytecount, MPI_CHAR, Global.theGroupSize - 1,
-		 CVMRECORD_MSG, comm_solver,	 &status);
-
-    }
-
-    /* Every processor should set these parameters correctly */
-    Global.theCVMRecordCount = bytecount / sizeof(cvmrecord_t);
-    if (Global.theCVMRecordCount * sizeof(cvmrecord_t) != (size_t)bytecount) {
-	fprintf(stderr, "Thread %d: received corrupted CVM data\n",
-		Global.myID);
-	MPI_Abort(MPI_COMM_WORLD, ERROR);
-	exit(1);
-    }
-
-    return cvmrecord;
-}
-
-
 
 /**
  * setrec: Search the CVM record array to obtain the material property of
- *	   a leaf octant.
+ *     a leaf octant.
  *
  */
 void setrec(octant_t *leaf, double ticksize, void *data)
@@ -1877,40 +2011,40 @@ void setrec(octant_t *leaf, double ticksize, void *data)
     searchpoint.z = z = leaf->lz + halfticks;
 
     if ((x * ticksize >= Param.theDomainX) ||
-	(y * ticksize >= Param.theDomainY) ||
-	(z * ticksize >= Param.theDomainZ)) {
-	/* Center point out the bound. Set Vs to force split */
-	edata->Vs = Param.theFactor * edata->edgesize / 2;
+    (y * ticksize >= Param.theDomainY) ||
+    (z * ticksize >= Param.theDomainZ)) {
+    /* Center point out the bound. Set Vs to force split */
+    edata->Vs = Param.theFactor * edata->edgesize / 2;
     } else {
-	int offset;
+    int offset;
 
-	/* map the coordinate from the octor address space to the
-	   etree address space */
-	searchpoint.x = x << 1;
-	searchpoint.y = y << 1;
-	searchpoint.z = z << 1;
+    /* map the coordinate from the octor address space to the
+       etree address space */
+    searchpoint.x = x << 1;
+    searchpoint.y = y << 1;
+    searchpoint.z = z << 1;
 
-	/* Inbound */
-	offset = zsearch(Global.theCVMRecord, Global.theCVMRecordCount, Global.theCVMRecordSize,
-			 &searchpoint);
-	if (offset < 0) {
-	    fprintf(stderr, "setrec: fatal error\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    /* Inbound */
+    offset = zsearch(Global.theCVMRecord, Global.theCVMRecordCount, Global.theCVMRecordSize,
+             &searchpoint);
+    if (offset < 0) {
+        fprintf(stderr, "setrec: fatal error\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	agghit = Global.theCVMRecord + offset;
-	edata->Vs = agghit->Vs;
-	edata->Vp = agghit->Vp;
-	edata->rho = agghit->density;
+    agghit = Global.theCVMRecord + offset;
+    edata->Vs = agghit->Vs;
+    edata->Vp = agghit->Vp;
+    edata->rho = agghit->density;
 
-	/* Adjust the Vs */
-	edata->Vs = (edata->Vs < Param.theVsCut) ? Param.theVsCut : edata->Vs;
+    /* Adjust the Vs */
+    edata->Vs = (edata->Vs < Param.theVsCut) ? Param.theVsCut : edata->Vs;
     }
 
     return;
 }
-#endif	/* USECVMDB */
+#endif  /* USECVMDB */
 
 
 /**
@@ -1982,20 +2116,20 @@ mesh_generate()
 #else
      /* Use flat data record file and distibute the data in memories */
     if (Global.myID == 0) {
-	fprintf(stdout, "slicing CVMDB ...");
+    fprintf(stdout, "slicing CVMDB ...");
     }
     Timer_Start("Slice CVM");
     Global.theCVMRecord = sliceCVM(Param.theCVMFlatFile);
     MPI_Barrier(comm_solver);
     Timer_Stop("Slice CVM");
     if (Global.theCVMRecord == NULL) {
-	fprintf(stderr, "Thread %d: Error obtaining the CVM records from %s\n",
-		Global.myID, Param.theCVMFlatFile);
-	MPI_Abort(MPI_COMM_WORLD, ERROR);
-	exit(1);
+    fprintf(stderr, "Thread %d: Error obtaining the CVM records from %s\n",
+        Global.myID, Param.theCVMFlatFile);
+    MPI_Abort(MPI_COMM_WORLD, ERROR);
+    exit(1);
     };
     if (Global.myID == 0) {
-	fprintf(stdout, "done : %9.2f seconds\n", Timer_Value("Slice CVM", 0));
+    fprintf(stdout, "done : %9.2f seconds\n", Timer_Value("Slice CVM", 0));
     }
 #endif
 
@@ -2065,7 +2199,7 @@ mesh_generate()
             fprintf(stdout, "Partitioning ");
             fflush(stdout);
         }
-        if (octor_partitiontree(Global.myOctree, bldgs_nodesearch) != 0) {
+        if (octor_partitiontree(Global.myOctree, bldgs_nodesearch_com,pushdowns_nodesearch) != 0) {
             fprintf(stderr, "Thread %d: mesh_generate: fail to balance load\n",Global.myID);
             MPI_Abort(MPI_COMM_WORLD, ERROR); exit(1);
         }
@@ -2089,17 +2223,24 @@ mesh_generate()
         MPI_Barrier(comm_solver);
     }
 
-    /* Buildings Carving */
-    if ( Param.includeBuildings == YES ) {
+    /* gggg */
 
+    /* Buildings/Topography Carving */
+//    if ( Param.includeBuildings == YES ||  Param.includeTopography == YES ) {
+    if ( Param.includeBuildings == YES ) {
+        int flag = 0;
         Timer_Start("Carve Buildings");
         if (Global.myID == 0) {
-            fprintf(stdout, "Carving buildings");
+            fprintf(stdout, "Carving Buildings/Topography");
             fflush(stdout);
         }
 
+        if(Param.includeBuildings == YES) flag = 1;
+
+
         /* NOTE: If you want to see the carving process, comment next line */
-        octor_carvebuildings(Global.myOctree, 1, bldgs_nodesearch);
+
+        octor_carvebuildings(Global.myOctree, flag, bldgs_nodesearch_com,pushdowns_search);
         MPI_Barrier(comm_solver);
         Timer_Stop("Carve Buildings");
         if (Global.myID == 0) {
@@ -2112,7 +2253,7 @@ mesh_generate()
             fprintf(stdout, "Repartitioning");
             fflush(stdout);
         }
-        if (octor_partitiontree(Global.myOctree, bldgs_nodesearch) != 0) {
+        if (octor_partitiontree(Global.myOctree, bldgs_nodesearch_com,pushdowns_nodesearch) != 0) {
             fprintf(stderr, "Thread %d: mesh_generate: fail to balance load\n",
                     Global.myID);
             MPI_Abort(MPI_COMM_WORLD, ERROR);
@@ -2138,7 +2279,9 @@ mesh_generate()
         fprintf(stdout, "Extracting the mesh %30s","");
         fflush(stdout);
     }
-    Global.myMesh = octor_extractmesh(Global.myOctree, bldgs_nodesearch);
+    Global.myMesh = octor_extractmesh(Global.myOctree, bldgs_nodesearch,pushdowns_nodesearch,bldgs_nodesearch_com,
+            find_topoAirOct, topo_nodesearch);
+
     if (Global.myMesh == NULL) {
         fprintf(stderr, "Thread %d: mesh_generate: fail to extract mesh\n",
                 Global.myID);
@@ -2168,8 +2311,10 @@ mesh_generate()
     }
 
 #ifdef USECVMDB
-    /* Close the material database */
-    etree_close(Global.theCVMEp);
+    if ( Param.useProfile == NO ) {
+        /* Close the material database */
+        etree_close(Global.theCVMEp);
+    }
 #else
     free(Global.theCVMRecord);
 #endif /* USECVMDB */
@@ -2178,40 +2323,47 @@ mesh_generate()
 
 /**
  * toexpand: Instruct the Octor library whether a leaf octant needs to
- *	     be expanded or not. Return 1 if true, 0 otherwise.
+ *       be expanded or not. Return 1 if true, 0 otherwise.
  *
  */
 static int32_t
 toexpand(octant_t *leaf, double ticksize, const void *data) {
 
-	if ( data == NULL ) {
-		return 1;
-	}
+    if ( data == NULL ) {
+        return 1;
+    }
 
-	int      res;
-	edata_t *edata = (edata_t *)data;
+    int      res;
+    edata_t *edata = (edata_t *)data;
 
-	if ( Param.includeBuildings == YES ) {
-		res = bldgs_toexpand( leaf, ticksize, edata, Param.theFactor );
-		if ( res != -1 ) {
-			return res;
-		}
-	}
+    if ( Param.includeBuildings == YES ) {
+        res = bldgs_toexpand( leaf, ticksize, edata, Param.theFactor );
+        if ( res != -1 ) {
+            return res;
+        }
+    }
 
-	if ( Param.drmImplement == YES) {
-		//if( Param.drmImplement == YES && Param.theDrmPart != PART1 ) {
-		res = drm_toexpand( leaf, ticksize, edata );
-		if ( res != -1 ) {
-			return res;
-		}
-	}
+    if ( Param.drmImplement == YES) {
+        //if( Param.drmImplement == YES && Param.theDrmPart != PART1 ) {
+        res = drm_toexpand( leaf, ticksize, edata );
+        if ( res != -1 ) {
+            return res;
+        }
+    }
 
-	return vsrule( edata, Param.theFactor );
+    if ( Param.includeTopography == YES ) {
+        res = topo_toexpand( leaf, ticksize, edata, Param.theFactor );
+        if ( res != -1 ) {
+            return res;
+        }
+    }
+
+    return vsrule( edata, Param.theFactor );
 }
 
 /**
  * bulkload: Append the data to the end of the mesh database. Return 0 if OK,
- *	     -1 on error.
+ *       -1 on error.
  *
  */
 static int32_t
@@ -2220,12 +2372,12 @@ bulkload(etree_t *mep, mrecord_t *partTable, int32_t count)
     int index;
 
     for (index = 0; index < count; index++) {
-	void *payload = &partTable[index].mdata;
+    void *payload = &partTable[index].mdata;
 
-	if (etree_append(mep, partTable[index].addr, payload) != 0) {
-	    /* Append error */
-	    return -1;
-	}
+    if (etree_append(mep, partTable[index].addr, payload) != 0) {
+        /* Append error */
+        return -1;
+    }
     }
 
     return 0;
@@ -2246,34 +2398,34 @@ mesh_print_stat_imp( int32_t* st, int group_size, FILE* out )
     global_id_t total_count[MESH_COUNT_LENGTH] = { 0, 0, 0, 0 };
 
     fputs( "\n"
-	   "# ------------------------------------------------------------\n"
-	   "# Mesh statistics:\n"
-	   "# ------------------------------------------------------------\n"
-	   "# Rank    Elements       Nodes     D-nodes     H-nodes\n", out );
+       "# ------------------------------------------------------------\n"
+       "# Mesh statistics:\n"
+       "# ------------------------------------------------------------\n"
+       "# Rank    Elements       Nodes     D-nodes     H-nodes\n", out );
 
     for (pid = 0; pid < group_size; pid++) {
-	fprintf( out, "%06d %11d %11d %11d %11d\n", pid, st[ELEMENT_COUNT],
-		 st[NODE_COUNT], st[DANGLING_COUNT], st[HARBORED_COUNT] );
+    fprintf( out, "%06d %11d %11d %11d %11d\n", pid, st[ELEMENT_COUNT],
+         st[NODE_COUNT], st[DANGLING_COUNT], st[HARBORED_COUNT] );
 
-	/* add to total count */
-	total_count[ELEMENT_COUNT]  += st[ELEMENT_COUNT];
-	total_count[NODE_COUNT]	    += st[NODE_COUNT];
-	total_count[DANGLING_COUNT] += st[DANGLING_COUNT];
-	total_count[HARBORED_COUNT] += st[HARBORED_COUNT];
+    /* add to total count */
+    total_count[ELEMENT_COUNT]  += st[ELEMENT_COUNT];
+    total_count[NODE_COUNT]     += st[NODE_COUNT];
+    total_count[DANGLING_COUNT] += st[DANGLING_COUNT];
+    total_count[HARBORED_COUNT] += st[HARBORED_COUNT];
 
-	st += MESH_COUNT_LENGTH;	/* move to next row */
+    st += MESH_COUNT_LENGTH;    /* move to next row */
     }
 
     fputs( "\n\n"
-	    "# ------------------------------------------------------------\n"
-	   "# Total\n"
-	   "# ------------------------------------------------------------\n",
-	   out );
+        "# ------------------------------------------------------------\n"
+       "# Total\n"
+       "# ------------------------------------------------------------\n",
+       out );
 
     fprintf( out, "       %11"INT64_FMT" %11"INT64_FMT" %11"INT64_FMT
-	     " %11"INT64_FMT"\n\n",
-	     total_count[ELEMENT_COUNT], total_count[NODE_COUNT],
-	     total_count[DANGLING_COUNT], total_count[HARBORED_COUNT] );
+         " %11"INT64_FMT"\n\n",
+         total_count[ELEMENT_COUNT], total_count[NODE_COUNT],
+         total_count[DANGLING_COUNT], total_count[HARBORED_COUNT] );
 
     /* copy totals to static globals */
     /* TODO this should be computed through different means */
@@ -2283,35 +2435,35 @@ mesh_print_stat_imp( int32_t* st, int group_size, FILE* out )
 
     /* output aggregate information to the monitor file / stdout */
     monitor_print(
-		   "Total elements:                      %11"INT64_FMT"\n"
-		   "Total nodes:                         %11"INT64_FMT"\n"
-		   "Total dangling nodes:                %11"INT64_FMT"\n\n",
-		   total_count[ELEMENT_COUNT], total_count[NODE_COUNT],
-		   total_count[DANGLING_COUNT] );
+           "Total elements:                      %11"INT64_FMT"\n"
+           "Total nodes:                         %11"INT64_FMT"\n"
+           "Total dangling nodes:                %11"INT64_FMT"\n\n",
+           total_count[ELEMENT_COUNT], total_count[NODE_COUNT],
+           total_count[DANGLING_COUNT] );
 }
 
 
 static int
 mesh_collect_print_stats( local_id_t mesh_stat[MESH_COUNT_LENGTH], int my_id,
-			  int group_size, const char* fname )
+              int group_size, const char* fname )
 {
     local_id_t* st = NULL;
 
     if (0 == my_id) { /* only the root node allocates memory */
-	XMALLOC_VAR_N( st, local_id_t, (group_size * MESH_COUNT_LENGTH) );
+    XMALLOC_VAR_N( st, local_id_t, (group_size * MESH_COUNT_LENGTH) );
     }
 
     MPI_Gather( mesh_stat, MESH_COUNT_LENGTH, MPI_INT,
-		st,        MESH_COUNT_LENGTH, MPI_INT, 0, comm_solver );
+        st,        MESH_COUNT_LENGTH, MPI_INT, 0, comm_solver );
 
     if (0 == my_id) { /* the root node prints the stats */
         const size_t bufsize = 1048576;  // 1MB
-	FILE* out = hu_fopen( Param.theMeshStatFilename, "w" );
+    FILE* out = hu_fopen( Param.theMeshStatFilename, "w" );
 
-	setvbuf( out, NULL, _IOFBF, bufsize );
-	mesh_print_stat_imp( st, group_size, out );
-	hu_fclosep( &out );
-	xfree_int32_t( &st );
+    setvbuf( out, NULL, _IOFBF, bufsize );
+    mesh_print_stat_imp( st, group_size, out );
+    hu_fclosep( &out );
+    xfree_int32_t( &st );
     }
 
     return 0;
@@ -2320,7 +2472,7 @@ mesh_collect_print_stats( local_id_t mesh_stat[MESH_COUNT_LENGTH], int my_id,
 
 static void
 mesh_printstat_imp( const mesh_t* mesh, int my_id, int group_size,
-		    const char* fname )
+            const char* fname )
 {
     local_id_t mesh_stat[MESH_COUNT_LENGTH];
 
@@ -2340,7 +2492,7 @@ mesh_printstat_imp( const mesh_t* mesh, int my_id, int group_size,
  */
 static void
 mesh_print_stat( const octree_t* oct, const mesh_t* mesh, int my_id,
-		 int group_size, const char* fname )
+         int group_size, const char* fname )
 {
     /* collective function calls */
     int32_t gmin = octor_getminleaflevel( oct, GLOBAL );
@@ -2349,8 +2501,8 @@ mesh_print_stat( const octree_t* oct, const mesh_t* mesh, int my_id,
     mesh_printstat_imp( mesh, my_id, group_size, fname );
 
     if (Global.myID == 0) {
-	monitor_print( "Maximum leaf level = %d\n", gmax );
-	monitor_print( "Minimum leaf level = %d\n", gmin );
+    monitor_print( "Maximum leaf level = %d\n", gmax );
+    monitor_print( "Minimum leaf level = %d\n", gmin );
     }
 }
 
@@ -2372,181 +2524,181 @@ mesh_output()
     /* Allocate a fixed size buffer space to store the join results */
     partTable = (mrecord_t *)calloc(batchlimit, sizeof(mrecord_t));
     if (partTable == NULL) {
-	fprintf(stderr,	 "Thread %d: mesh_output: out of memory\n", Global.myID);
-	MPI_Abort(MPI_COMM_WORLD, ERROR);
-	exit(1);
+    fprintf(stderr,  "Thread %d: mesh_output: out of memory\n", Global.myID);
+    MPI_Abort(MPI_COMM_WORLD, ERROR);
+    exit(1);
     }
 
     if (Global.myID == 0) {
-	etree_t *mep;
-	int32_t procid;
+    etree_t *mep;
+    int32_t procid;
 
-	printf("mesh_output ... ");
+    printf("mesh_output ... ");
 
-	mep = etree_open(Param.mesh_etree_output_file, O_CREAT|O_RDWR|O_TRUNC, 0,
-			 sizeof(mdata_t),3);
-	if (mep == NULL) {
-	    fprintf(stderr, "Thread 0: mesh_output: ");
-	    fprintf(stderr, "cannot create mesh etree\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    mep = etree_open(Param.mesh_etree_output_file, O_CREAT|O_RDWR|O_TRUNC, 0,
+             sizeof(mdata_t),3);
+    if (mep == NULL) {
+        fprintf(stderr, "Thread 0: mesh_output: ");
+        fprintf(stderr, "cannot create mesh etree\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	/* Begin an appending operation */
-	if (etree_beginappend(mep, 1) != 0) {
-	    fprintf(stderr, "Thread 0: mesh_output: \n");
-	    fprintf(stderr, "cannot begin an append operation\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    /* Begin an appending operation */
+    if (etree_beginappend(mep, 1) != 0) {
+        fprintf(stderr, "Thread 0: mesh_output: \n");
+        fprintf(stderr, "cannot begin an append operation\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	eindex = 0;
-	while (eindex < Global.myMesh->lenum) {
-	    remains = Global.myMesh->lenum - eindex;
-	    batch = (remains < batchlimit) ? remains : batchlimit;
+    eindex = 0;
+    while (eindex < Global.myMesh->lenum) {
+        remains = Global.myMesh->lenum - eindex;
+        batch = (remains < batchlimit) ? remains : batchlimit;
 
-	    for (idx = 0; idx < batch; idx++) {
-		mrecord_t *mrecord;
-		int32_t whichnode;
-		int32_t localnid0;
+        for (idx = 0; idx < batch; idx++) {
+        mrecord_t *mrecord;
+        int32_t whichnode;
+        int32_t localnid0;
 
-		mrecord = &partTable[idx];
+        mrecord = &partTable[idx];
 
-		/* Fill the address field */
-		localnid0 = Global.myMesh->elemTable[eindex].lnid[0];
+        /* Fill the address field */
+        localnid0 = Global.myMesh->elemTable[eindex].lnid[0];
 
-		mrecord->addr.x = Global.myMesh->nodeTable[localnid0].x;
-		mrecord->addr.y = Global.myMesh->nodeTable[localnid0].y;
-		mrecord->addr.z = Global.myMesh->nodeTable[localnid0].z;
-		mrecord->addr.level = Global.myMesh->elemTable[eindex].level;
-		mrecord->addr.type = ETREE_LEAF;
+        mrecord->addr.x = Global.myMesh->nodeTable[localnid0].x;
+        mrecord->addr.y = Global.myMesh->nodeTable[localnid0].y;
+        mrecord->addr.z = Global.myMesh->nodeTable[localnid0].z;
+        mrecord->addr.level = Global.myMesh->elemTable[eindex].level;
+        mrecord->addr.type = ETREE_LEAF;
 
-		/* Find the global node ids for the vertices */
-		for (whichnode = 0; whichnode < 8; whichnode++) {
-		    int32_t localnid;
-		    int64_t globalnid;
+        /* Find the global node ids for the vertices */
+        for (whichnode = 0; whichnode < 8; whichnode++) {
+            int32_t localnid;
+            int64_t globalnid;
 
-		    localnid = Global.myMesh->elemTable[eindex].lnid[whichnode];
-		    globalnid = Global.myMesh->nodeTable[localnid].gnid;
+            localnid = Global.myMesh->elemTable[eindex].lnid[whichnode];
+            globalnid = Global.myMesh->nodeTable[localnid].gnid;
 
-		    mrecord->mdata.nid[whichnode] = globalnid;
-		}
+            mrecord->mdata.nid[whichnode] = globalnid;
+        }
 
-		/* data points to mdata_t type */
-		memcpy(&mrecord->mdata.edgesize,
-		       Global.myMesh->elemTable[eindex].data,
-		       sizeof(edata_t));
+        /* data points to mdata_t type */
+        memcpy(&mrecord->mdata.edgesize,
+               Global.myMesh->elemTable[eindex].data,
+               sizeof(edata_t));
 
-		eindex++;
-	    } /* for a batch */
+        eindex++;
+        } /* for a batch */
 
-	    if (bulkload(mep, partTable, batch) != 0) {
-		fprintf(stderr, "Thread 0: mesh_output: ");
-		fprintf(stderr, "error bulk-loading data\n");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
-	} /* for all the elements Thread 0 has */
+        if (bulkload(mep, partTable, batch) != 0) {
+        fprintf(stderr, "Thread 0: mesh_output: ");
+        fprintf(stderr, "error bulk-loading data\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
+    } /* for all the elements Thread 0 has */
 
-	/* Receive data from other processors */
-	for (procid = 1; procid < Global.theGroupSize; procid++) {
-	    MPI_Status status;
-	    int32_t rcvbytecount;
+    /* Receive data from other processors */
+    for (procid = 1; procid < Global.theGroupSize; procid++) {
+        MPI_Status status;
+        int32_t rcvbytecount;
 
-	    /* Signal the next processor to go ahead */
-	    MPI_Send(NULL, 0, MPI_CHAR, procid, GOAHEAD_MSG, comm_solver);
+        /* Signal the next processor to go ahead */
+        MPI_Send(NULL, 0, MPI_CHAR, procid, GOAHEAD_MSG, comm_solver);
 
-	    while (1) {
-		MPI_Probe(procid, MESH_MSG, comm_solver, &status);
-		MPI_Get_count(&status, MPI_CHAR, &rcvbytecount);
+        while (1) {
+        MPI_Probe(procid, MESH_MSG, comm_solver, &status);
+        MPI_Get_count(&status, MPI_CHAR, &rcvbytecount);
 
-		batch = rcvbytecount / sizeof(mrecord_t);
+        batch = rcvbytecount / sizeof(mrecord_t);
 
-		MPI_Recv(partTable, rcvbytecount, MPI_CHAR, procid,
-			 MESH_MSG, comm_solver, &status);
+        MPI_Recv(partTable, rcvbytecount, MPI_CHAR, procid,
+             MESH_MSG, comm_solver, &status);
 
-		if (batch == 0) {
-		    /* Done */
-		    break;
-		}
+        if (batch == 0) {
+            /* Done */
+            break;
+        }
 
-		if (bulkload(mep, partTable, batch) != 0) {
-		    fprintf(stderr, "Thread 0: mesh_output: ");
-		    fprintf(stderr, "cannot bulkloading data from ");
-		    fprintf(stderr, "Thread %d\n", procid);
-		    MPI_Abort(MPI_COMM_WORLD, ERROR);
-		    exit(1);
-		}
-	    } /* while there is more data to be received from procid */
-	} /* for all the processors */
+        if (bulkload(mep, partTable, batch) != 0) {
+            fprintf(stderr, "Thread 0: mesh_output: ");
+            fprintf(stderr, "cannot bulkloading data from ");
+            fprintf(stderr, "Thread %d\n", procid);
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
+        } /* while there is more data to be received from procid */
+    } /* for all the processors */
 
-	/* End the appending operation */
-	etree_endappend(mep);
+    /* End the appending operation */
+    etree_endappend(mep);
 
-	/* Close the mep to ensure the data is on disk */
-	if (etree_close(mep) != 0) {
-	    fprintf(stderr, "Thread 0: mesh_output ");
-	    fprintf(stderr, "error closing the etree database\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    /* Close the mep to ensure the data is on disk */
+    if (etree_close(mep) != 0) {
+        fprintf(stderr, "Thread 0: mesh_output ");
+        fprintf(stderr, "error closing the etree database\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
     } else {
-	/* Processors other than 0 needs to send data to 0 */
-	int32_t sndbytecount;
-	MPI_Status status;
+    /* Processors other than 0 needs to send data to 0 */
+    int32_t sndbytecount;
+    MPI_Status status;
 
-	/* Wait for me turn */
-	MPI_Recv(NULL, 0, MPI_CHAR, 0, GOAHEAD_MSG, comm_solver, &status);
+    /* Wait for me turn */
+    MPI_Recv(NULL, 0, MPI_CHAR, 0, GOAHEAD_MSG, comm_solver, &status);
 
-	eindex = 0;
-	while (eindex < Global.myMesh->lenum) {
-	    remains = Global.myMesh->lenum - eindex;
-	    batch = (remains < batchlimit) ? remains : batchlimit;
+    eindex = 0;
+    while (eindex < Global.myMesh->lenum) {
+        remains = Global.myMesh->lenum - eindex;
+        batch = (remains < batchlimit) ? remains : batchlimit;
 
-	    for (idx = 0; idx < batch; idx++) {
-		mrecord_t *mrecord;
-		int32_t whichnode;
-		int32_t localnid0;
+        for (idx = 0; idx < batch; idx++) {
+        mrecord_t *mrecord;
+        int32_t whichnode;
+        int32_t localnid0;
 
-		mrecord = &partTable[idx];
+        mrecord = &partTable[idx];
 
-		/* Fill the address field */
-		localnid0 = Global.myMesh->elemTable[eindex].lnid[0];
+        /* Fill the address field */
+        localnid0 = Global.myMesh->elemTable[eindex].lnid[0];
 
-		mrecord->addr.x = Global.myMesh->nodeTable[localnid0].x;
-		mrecord->addr.y = Global.myMesh->nodeTable[localnid0].y;
-		mrecord->addr.z = Global.myMesh->nodeTable[localnid0].z;
-		mrecord->addr.level = Global.myMesh->elemTable[eindex].level;
-		mrecord->addr.type = ETREE_LEAF;
+        mrecord->addr.x = Global.myMesh->nodeTable[localnid0].x;
+        mrecord->addr.y = Global.myMesh->nodeTable[localnid0].y;
+        mrecord->addr.z = Global.myMesh->nodeTable[localnid0].z;
+        mrecord->addr.level = Global.myMesh->elemTable[eindex].level;
+        mrecord->addr.type = ETREE_LEAF;
 
-		/* Find the global node ids for the vertices */
-		for (whichnode = 0; whichnode < 8; whichnode++) {
-		    int32_t localnid;
-		    int64_t globalnid;
+        /* Find the global node ids for the vertices */
+        for (whichnode = 0; whichnode < 8; whichnode++) {
+            int32_t localnid;
+            int64_t globalnid;
 
-		    localnid = Global.myMesh->elemTable[eindex].lnid[whichnode];
-		    globalnid = Global.myMesh->nodeTable[localnid].gnid;
+            localnid = Global.myMesh->elemTable[eindex].lnid[whichnode];
+            globalnid = Global.myMesh->nodeTable[localnid].gnid;
 
-		    mrecord->mdata.nid[whichnode] = globalnid;
-		}
+            mrecord->mdata.nid[whichnode] = globalnid;
+        }
 
-		memcpy(&mrecord->mdata.edgesize,
-		       Global.myMesh->elemTable[eindex].data,
-		       sizeof(edata_t));
+        memcpy(&mrecord->mdata.edgesize,
+               Global.myMesh->elemTable[eindex].data,
+               sizeof(edata_t));
 
-		eindex++;
-	    } /* for a batch */
+        eindex++;
+        } /* for a batch */
 
 
-	    /* Send data to proc 0 */
-	    sndbytecount = batch * sizeof(mrecord_t);
-	    MPI_Send(partTable, sndbytecount, MPI_CHAR, 0, MESH_MSG,
-		     comm_solver);
-	} /* While there is data left to be sent */
+        /* Send data to proc 0 */
+        sndbytecount = batch * sizeof(mrecord_t);
+        MPI_Send(partTable, sndbytecount, MPI_CHAR, 0, MESH_MSG,
+             comm_solver);
+    } /* While there is data left to be sent */
 
-	/* Send an empty message to indicate the end of my transfer */
-	MPI_Send(NULL, 0, MPI_CHAR, 0, MESH_MSG, comm_solver);
+    /* Send an empty message to indicate the end of my transfer */
+    MPI_Send(NULL, 0, MPI_CHAR, 0, MESH_MSG, comm_solver);
     }
 
     /* Free the memory for the partial join results */
@@ -2555,7 +2707,7 @@ mesh_output()
     Timer_Stop("Mesh Out");
 
     if (Global.myID == 0) {
-	printf("done : %9.2f seconds\n", Timer_Value("Mesh Out", 0) );
+    printf("done : %9.2f seconds\n", Timer_Value("Mesh Out", 0) );
     }
 
     return;
@@ -2577,8 +2729,8 @@ mesh_output()
 #define INTEGRAL_2(xki, xlj, xmi, xmj) \
 (4.5 * xki * xlj * (1 + xmi * xmj / 3) / 8)
 
-#define DS_TOTAL_INTERVALS	    40
-#define DS_TOTAL_PARAMETERS	     6
+#define DS_TOTAL_INTERVALS      40
+#define DS_TOTAL_PARAMETERS      6
 
 /**
  * Compute histograms for xi, zeta and associated values to understand
@@ -2587,17 +2739,17 @@ mesh_output()
  */
 static void
 damping_statistics (
-	double min_xi,
-	double max_xi,
-	double min_zeta,
-	double max_zeta,
-	double min_VsVp,
-	double max_VsVp,
-	double min_VpVsZ,
-	double max_VpVsZ,
-	double min_Vs,
-	double max_Vs
-	)
+    double min_xi,
+    double max_xi,
+    double min_zeta,
+    double max_zeta,
+    double min_VsVp,
+    double max_VsVp,
+    double min_VpVsZ,
+    double max_VpVsZ,
+    double min_Vs,
+    double max_Vs
+    )
 {
     static const int totalintervals  = DS_TOTAL_INTERVALS;
     static const int totalparameters = DS_TOTAL_PARAMETERS;
@@ -2607,13 +2759,13 @@ damping_statistics (
     double  min_VpVs, max_VpVs;
 
     double  themins[DS_TOTAL_PARAMETERS],
-	    themaxs[DS_TOTAL_PARAMETERS],
-	    spacing[DS_TOTAL_PARAMETERS];
+        themaxs[DS_TOTAL_PARAMETERS],
+        spacing[DS_TOTAL_PARAMETERS];
 
     int32_t counters[DS_TOTAL_PARAMETERS][DS_TOTAL_INTERVALS],
-	    global_counter[DS_TOTAL_PARAMETERS][DS_TOTAL_INTERVALS],
-	    global_total[DS_TOTAL_PARAMETERS],
-	    eindex;
+        global_counter[DS_TOTAL_PARAMETERS][DS_TOTAL_INTERVALS],
+        global_total[DS_TOTAL_PARAMETERS],
+        eindex;
 
     /* Initializing clue values and variables */
 
@@ -2636,93 +2788,93 @@ damping_statistics (
 
     for ( row = 0; row < totalparameters; row++ )
     {
-	for ( col = 0; col < totalintervals; col++ )
-	{
-	    counters[row][col] = 0;
-	}
-	global_total[row] = 0;
+    for ( col = 0; col < totalintervals; col++ )
+    {
+        counters[row][col] = 0;
+    }
+    global_total[row] = 0;
     }
 
     for ( row = 0; row < totalparameters; row++ )
     {
-	spacing[row] = ( themaxs[row] - themins[row] ) / totalintervals;
+    spacing[row] = ( themaxs[row] - themins[row] ) / totalintervals;
     }
 
     /* loop over the elements */
     for ( eindex = 0; eindex < Global.myMesh->lenum; eindex++)
     {
-	/* loop variables */
-	elem_t	*elemp;
-	edata_t *edata;
-	double	 a, b,
-		 omega,
-		 elementvalues[6];
+    /* loop variables */
+    elem_t  *elemp;
+    edata_t *edata;
+    double   a, b,
+         omega,
+         elementvalues[6];
 
-	/* capturing the elements */
-	elemp = &Global.myMesh->elemTable[eindex];
-	edata = (edata_t *)elemp->data;
+    /* capturing the elements */
+    elemp = &Global.myMesh->elemTable[eindex];
+    edata = (edata_t *)elemp->data;
 
-	/* the parameteres */
-	elementvalues[0] = 10 / edata->Vs;
-	  /* (edata->Vs < 1500) ? 25 / edata->Vs : 5 / edata->Vs; */
-	  /* zeta */
-	omega = 3.46410161514 / ( edata->edgesize / edata->Vp );     /* freq in rad */
-	a = elementvalues[0] * Global.theABase;			    /* a     */
-	b = elementvalues[0] * Global.theBBase;			    /* b     */
-	elementvalues[1] = ( a / (2 * omega)) + ( b * omega / 2 );  /* xi    */
-	elementvalues[2] = ( edata->Vs / edata->Vp);		    /* Vs/Vp */
-	elementvalues[3] = edata->Vp / edata->Vs;		    /* Vp/Vs */
-	elementvalues[4] = elementvalues[0] * ( edata->Vp / edata->Vs );
-	/* Vp/Vs*zeta  */
-	elementvalues[5] = edata->Vs;				    /* Vs    */
+    /* the parameteres */
+    elementvalues[0] = 10 / edata->Vs;
+      /* (edata->Vs < 1500) ? 25 / edata->Vs : 5 / edata->Vs; */
+      /* zeta */
+    omega = 3.46410161514 / ( edata->edgesize / edata->Vp );     /* freq in rad */
+    a = elementvalues[0] * Global.theABase;             /* a     */
+    b = elementvalues[0] * Global.theBBase;             /* b     */
+    elementvalues[1] = ( a / (2 * omega)) + ( b * omega / 2 );  /* xi    */
+    elementvalues[2] = ( edata->Vs / edata->Vp);            /* Vs/Vp */
+    elementvalues[3] = edata->Vp / edata->Vs;           /* Vp/Vs */
+    elementvalues[4] = elementvalues[0] * ( edata->Vp / edata->Vs );
+    /* Vp/Vs*zeta  */
+    elementvalues[5] = edata->Vs;                   /* Vs    */
 
-	/* loop over the parameters */
-	for ( parameter = 0; parameter < totalparameters; parameter++ )
-	{
-	    /* loop over each interval */
-	    for ( interval = 0; interval < totalintervals; interval++)
-	    {
-		/* loop variables */
-		double liminf, limsup;
+    /* loop over the parameters */
+    for ( parameter = 0; parameter < totalparameters; parameter++ )
+    {
+        /* loop over each interval */
+        for ( interval = 0; interval < totalintervals; interval++)
+        {
+        /* loop variables */
+        double liminf, limsup;
 
-		/* histogram limits */
-		liminf = themins[parameter] + (interval * spacing[parameter]);
-		limsup = liminf + spacing[parameter];
+        /* histogram limits */
+        liminf = themins[parameter] + (interval * spacing[parameter]);
+        limsup = liminf + spacing[parameter];
 
-		/* for the last interval adjust to the max value */
-		if ( interval == totalintervals-1 )
-		{
-		    limsup = themaxs[parameter];
-		}
+        /* for the last interval adjust to the max value */
+        if ( interval == totalintervals-1 )
+        {
+            limsup = themaxs[parameter];
+        }
 
-		/* counting elements within the interval */
-		if ( ( elementvalues[parameter] >  liminf ) &&
-		     ( elementvalues[parameter] <= limsup ) )
-		{
-		    counters[parameter][interval]++;
-		}
-	    } /* ends loop on intervals */
-	} /* ends loop on parameters */
+        /* counting elements within the interval */
+        if ( ( elementvalues[parameter] >  liminf ) &&
+             ( elementvalues[parameter] <= limsup ) )
+        {
+            counters[parameter][interval]++;
+        }
+        } /* ends loop on intervals */
+    } /* ends loop on parameters */
     } /*ends loop on elements */
 
     /* add all counting results from each processor */
     matrixelements = totalparameters * totalintervals;
     MPI_Reduce (&counters[0][0], &global_counter[0][0], matrixelements,
-		MPI_INT, MPI_SUM, 0, comm_solver);
+        MPI_INT, MPI_SUM, 0, comm_solver);
     MPI_Bcast (&global_counter[0][0], matrixelements, MPI_INT,0,comm_solver);
 
     /* sums the total of elements for each histogram */
     if (Global.myID == 0)
     {
-	for ( parameter = 0; parameter < totalparameters; parameter++)
-	{
-	    global_counter[parameter][0]++;
-	    for ( interval = 0; interval < totalintervals; interval++)
-	    {
-		global_total[parameter] = global_total[parameter]
-		    + global_counter[parameter][interval];
-	    }
-	}
+    for ( parameter = 0; parameter < totalparameters; parameter++)
+    {
+        global_counter[parameter][0]++;
+        for ( interval = 0; interval < totalintervals; interval++)
+        {
+        global_total[parameter] = global_total[parameter]
+            + global_counter[parameter][interval];
+        }
+    }
     }
 
     /* MPI Barrier */
@@ -2731,42 +2883,42 @@ damping_statistics (
     /* prints to the terminal the histograms */
     if (Global.myID == 0)
     {
-	/* header to identify each column */
-	printf("\n\n\tThe histograms of the following parameters: \n\n");
-	printf("\t 1. Zeta\n");
-	printf("\t 2. Xi\n");
-	printf("\t 3. Vs/Vp\n");
-	printf("\t 4. Vp/Vs\n");
-	printf("\t 5. Vp/Vs*zeta\n");
-	printf("\t 6. Vs\n\n");
-	printf("\tAre given in the following table\n");
-	printf("\t(each column is one of the parameters)\n\n\t");
+    /* header to identify each column */
+    printf("\n\n\tThe histograms of the following parameters: \n\n");
+    printf("\t 1. Zeta\n");
+    printf("\t 2. Xi\n");
+    printf("\t 3. Vs/Vp\n");
+    printf("\t 4. Vp/Vs\n");
+    printf("\t 5. Vp/Vs*zeta\n");
+    printf("\t 6. Vs\n\n");
+    printf("\tAre given in the following table\n");
+    printf("\t(each column is one of the parameters)\n\n\t");
 
-	/* printing the histograms */
-	for ( interval = 0; interval < totalintervals; interval++)
-	{
-	    for ( parameter = 0; parameter < totalparameters; parameter++)
-	    {
-		printf("%12d",global_counter[parameter][interval]);
-	    }
-	    printf("\n\t");
-	}
+    /* printing the histograms */
+    for ( interval = 0; interval < totalintervals; interval++)
+    {
+        for ( parameter = 0; parameter < totalparameters; parameter++)
+        {
+        printf("%12d",global_counter[parameter][interval]);
+        }
+        printf("\n\t");
+    }
 
-	/* prints the total of elements for each column */
-	printf("\n\tTotals:\n\n\t");
-	for ( parameter = 0; parameter < totalparameters; parameter++)
-	{
-	    printf("%12d",global_total[parameter]);
-	}
+    /* prints the total of elements for each column */
+    printf("\n\tTotals:\n\n\t");
+    for ( parameter = 0; parameter < totalparameters; parameter++)
+    {
+        printf("%12d",global_total[parameter]);
+    }
 
-	/* prints the interval witdth */
-	printf("\n\n\tAnd the intervals width is:");
-	for ( parameter = 0; parameter < totalparameters; parameter++)
-	{
-	    printf("\n\t %2d. %.6f ",parameter+1,spacing[parameter]);
-	}
-	printf ("\n\n");
-	fflush (stdout);
+    /* prints the interval witdth */
+    printf("\n\n\tAnd the intervals width is:");
+    for ( parameter = 0; parameter < totalparameters; parameter++)
+    {
+        printf("\n\t %2d. %.6f ",parameter+1,spacing[parameter]);
+    }
+    printf ("\n\n");
+    fflush (stdout);
     }
 
     return;
@@ -2778,224 +2930,245 @@ damping_statistics (
  */
 static void solver_set_critical_T()
 {
-    int32_t eindex;			/* element index	 */
+    int32_t eindex;         /* element index     */
 
-    double  min_h_over_Vp = 1e32;	/* the min h/Vp group	 */
+    double  min_h_over_Vp = 1e32;   /* the min h/Vp group    */
     double  min_h_over_Vp_global;
     int32_t min_h_over_Vp_elem_index = -1;
 
-    double  min_dt_factor_X = 1e32;	/* the min delta_t group */
+    double  min_dt_factor_X = 1e32; /* the min delta_t group */
     double  min_dt_factor_Z = 1e32,
-	    min_dt_factor_X_global,
-	    min_dt_factor_Z_global;
+        min_dt_factor_X_global,
+        min_dt_factor_Z_global;
     int32_t min_dt_factor_X_elem_index = -1,
-	    min_dt_factor_Z_elem_index = -1;
+        min_dt_factor_Z_elem_index = -1;
 
-    double  min_zeta = 1e32;		/* the zeta group	 */
+    double  min_zeta = 1e32;        /* the zeta group    */
     double  max_zeta = 0,
-	    min_zeta_global,
-	    max_zeta_global;
+        min_zeta_global,
+        max_zeta_global;
     int32_t min_zeta_elem_index = -1,
-	    max_zeta_elem_index = -1;
+        max_zeta_elem_index = -1;
 
-    double  min_xi = 1e32;		/* the xi group		 */
+    double  min_xi = 1e32;      /* the xi group      */
     double  max_xi = 0,
-	    min_xi_global,
-	    max_xi_global;
+        min_xi_global,
+        max_xi_global;
     int32_t min_xi_elem_index = -1,
-	    max_xi_elem_index = -1;
+        max_xi_elem_index = -1;
 
-    double  min_VsVp = 1e32;		/* the Vs/Vp group	 */
+    double  min_VsVp = 1e32;        /* the Vs/Vp group   */
     double  min_VsVp_global,
-	    max_VsVp = 0,
-	    max_VsVp_global;
+        max_VsVp = 0,
+        max_VsVp_global;
     int32_t min_VsVp_elem_index = -1,
-	    max_VsVp_elem_index = -1;
+        max_VsVp_elem_index = -1;
 
-    double  min_VpVsZ = 1e32;		/* the Vp/Vs group	 */
+    double  min_VpVsZ = 1e32;       /* the Vp/Vs group   */
     double  min_VpVsZ_global,
-	    max_VpVsZ = 0,
-	    max_VpVsZ_global;
+        max_VpVsZ = 0,
+        max_VpVsZ_global;
     int32_t min_VpVsZ_elem_index = -1,
-	    max_VpVsZ_elem_index = -1;
+        max_VpVsZ_elem_index = -1;
 
-    double  min_Vs = 1e32;		/* the Vs group		 */
+    double  min_Vs = 1e32;      /* the Vs group      */
     double  min_Vs_global,
-	    max_Vs = 0,
-	    max_Vs_global;
+        max_Vs = 0,
+        max_Vs_global;
     int32_t min_Vs_elem_index = -1,
-	    max_Vs_elem_index = -1;
+        max_Vs_elem_index = -1;
 
     /* Find the minima and maxima for all needed coefficients */
     /* Start loop over the mesh elements */
     for (eindex = 0; eindex < Global.myMesh->lenum; eindex++)
     {
-	/* Loop local variables */
+    /* Loop local variables */
 
-	elem_t	*elemp;	      /* pointer to the mesh database		      */
-	edata_t *edata;	      /* pointer to the element data		      */
+    elem_t  *elemp;       /* pointer to the mesh database             */
+    edata_t *edata;       /* pointer to the element data              */
 
-	double	 ratio;	      /* the h/Vp ratio				      */
-	double	 zeta;	      /* the time domain zeta-damping		      */
-	double	 xi;	      /* the freq domain xi-damping		      */
-	double	 omega;	      /* the element associated freq from w=3.46*Vp/h */
-	double	 a, b;	      /* the same constants we use for C = aM + bK    */
-	double	 dt_factor_X; /* the factor of 0.577(1-xi)*h/Vp		      */
-	double	 dt_factor_Z; /* the factor of 0.577(1-zeta)*h/Vp	      */
-	double	 VsVp;	      /* the quotient Vs/Vp			      */
-	double	 VpVsZ;	      /* the result of Vp / Vs * zeta		      */
-	double	 Vs;	      /* the Vs					      */
+    double   ratio;       /* the h/Vp ratio                   */
+    double   zeta;        /* the time domain zeta-damping             */
+    double   xi;          /* the freq domain xi-damping           */
+    double   omega;       /* the element associated freq from w=3.46*Vp/h */
+    double   a, b;        /* the same constants we use for C = aM + bK    */
+    double   dt_factor_X; /* the factor of 0.577(1-xi)*h/Vp           */
+    double   dt_factor_Z; /* the factor of 0.577(1-zeta)*h/Vp         */
+    double   VsVp;        /* the quotient Vs/Vp               */
+    double   VpVsZ;       /* the result of Vp / Vs * zeta             */
+    double   Vs;          /* the Vs                       */
 
-	/* Captures the element */
+    /* yigit says -- Buildings assume 5% damping */
+    int64_t   n_0;
+    double    z_m;
 
-	elemp = &Global.myMesh->elemTable[eindex];
-	edata = (edata_t *)elemp->data;
+    /* Captures the element */
 
-	/* Calculate the clue quantities */
+    elemp = &Global.myMesh->elemTable[eindex];
+    edata = (edata_t *)elemp->data;
 
-	ratio	    = edata->edgesize / edata->Vp;
+    /* Calculate the clue quantities */
 
-	/* Old formula for damping */
-	/* zeta	       = (edata->Vs < 1500) ? 25 / edata->Vs : 5 / edata->Vs; */
-	/* New formula acording to Graves */
+    if ( edata->Vp != -1 )
+        ratio       = edata->edgesize / edata->Vp;
+    else
+        ratio = 1e32;
 
-	zeta	    = 10 / edata->Vs;
+    /* Old formula for damping */
+    /* zeta        = (edata->Vs < 1500) ? 25 / edata->Vs : 5 / edata->Vs; */
+    /* New formula acording to Graves */
 
-	omega	    = 3.46410161514 / ratio;
-	a	    = zeta * Global.theABase;
-	b	    = zeta * Global.theBBase;
-	xi	    = ( a / (2 * omega)) + ( b * omega / 2 );
-	dt_factor_X = 0.57735026919 * ( 1 - xi ) * ratio;
-	dt_factor_Z = 0.57735026919 * ( 1 - zeta ) * ratio;
-	VsVp	    = edata->Vs / edata->Vp;
-	VpVsZ	    = zeta * ( edata->Vp / edata->Vs );
-	Vs	    = edata->Vs;
 
-	/* Updating for extreme values */
+    n_0 = Global.myMesh->elemTable[eindex].lnid[0];
+    z_m = Global.theZForMeshOrigin + (Global.myOctree->ticksize)*Global.myMesh->nodeTable[n_0].z;
 
-	/* ratio */
-	if ( ratio < min_h_over_Vp )
-	{
-	    min_h_over_Vp = ratio;
-	    min_h_over_Vp_elem_index = eindex;
-	}
+    /* Shift the domain if buildings are considered */
+    if ( Param.includeBuildings == YES ) {
+        z_m -= get_surface_shift();
+    }
 
-	/* dt_factors */
-	if ( dt_factor_X < min_dt_factor_X )
-	{
-	    min_dt_factor_X = dt_factor_X;
-	    min_dt_factor_X_elem_index = eindex;
-	}
-	if ( dt_factor_Z < min_dt_factor_Z )
-	{
-	    min_dt_factor_Z = dt_factor_Z;
-	    min_dt_factor_Z_elem_index = eindex;
-	}
+    zeta        = 25.0 / edata->Vs;
 
-	/* min_zeta and max_zeta */
-	if ( zeta < min_zeta )
-	{
-	    min_zeta = zeta;
-	    min_zeta_elem_index = eindex;
-	}
-	if ( zeta > max_zeta )
-	{
-	    max_zeta = zeta;
-	    max_zeta_elem_index = eindex;
-	}
+    /*If element is in the building, use 5% damping.*/
+    if (z_m < 0) {
+        zeta = 0.05;
+    }
 
-	/* min_xi and max_xi */
-	if ( xi < min_xi )
-	{
-	    min_xi = xi;
-	    min_xi_elem_index = eindex;
-	}
-	if ( xi > max_xi )
-	{
-	    max_xi = xi;
-	    max_xi_elem_index = eindex;
-	}
+    omega       = 3.46410161514 / ratio;
+    a       = zeta * Global.theABase;
+    b       = zeta * Global.theBBase;
+    xi      = ( a / (2 * omega)) + ( b * omega / 2 );
+    dt_factor_X = 0.57735026919 * ( 1 - xi ) * ratio;
+    dt_factor_Z = 0.57735026919 * ( 1 - zeta ) * ratio;
+    VsVp        = edata->Vs / edata->Vp;
+    VpVsZ       = zeta * ( edata->Vp / edata->Vs );
+    Vs      = edata->Vs;
 
-	/* min Vs/Vp */
-	if ( VsVp < min_VsVp )
-	{
-	    min_VsVp = VsVp;
-	    min_VsVp_elem_index = eindex;
-	}
-	if ( VsVp > max_VsVp )
-	{
-	    max_VsVp = VsVp;
-	    max_VsVp_elem_index = eindex;
-	}
+    /* Updating for extreme values */
 
-	/* min and max VpVsZ */
-	if ( VpVsZ < min_VpVsZ )
-	{
-	    min_VpVsZ = VpVsZ;
-	    min_VpVsZ_elem_index = eindex;
-	}
-	if ( VpVsZ > max_VpVsZ )
-	{
-	    max_VpVsZ = VpVsZ;
-	    max_VpVsZ_elem_index = eindex;
-	}
+    /* ratio */
+    if ( ratio < min_h_over_Vp )
+    {
+        min_h_over_Vp = ratio;
+        min_h_over_Vp_elem_index = eindex;
+    }
 
-	/* min Vs */
-	if ( Vs < min_Vs )
-	{
-	    min_Vs = Vs;
-	    min_Vs_elem_index = eindex;
-	}
-	if ( Vs > max_Vs )
-	{
-	    max_Vs = Vs;
-	    max_Vs_elem_index = eindex;
-	}
+    /* dt_factors */
+    if ( dt_factor_X < min_dt_factor_X )
+    {
+        min_dt_factor_X = dt_factor_X;
+        min_dt_factor_X_elem_index = eindex;
+    }
+    if ( dt_factor_Z < min_dt_factor_Z )
+    {
+        min_dt_factor_Z = dt_factor_Z;
+        min_dt_factor_Z_elem_index = eindex;
+    }
+
+    /* min_zeta and max_zeta */
+    if ( zeta < min_zeta )
+    {
+        min_zeta = zeta;
+        min_zeta_elem_index = eindex;
+    }
+    if ( zeta > max_zeta )
+    {
+        max_zeta = zeta;
+        max_zeta_elem_index = eindex;
+    }
+
+    /* min_xi and max_xi */
+    if ( xi < min_xi )
+    {
+        min_xi = xi;
+        min_xi_elem_index = eindex;
+    }
+    if ( xi > max_xi )
+    {
+        max_xi = xi;
+        max_xi_elem_index = eindex;
+    }
+
+    /* min Vs/Vp */
+    if ( VsVp < min_VsVp )
+    {
+        min_VsVp = VsVp;
+        min_VsVp_elem_index = eindex;
+    }
+    if ( VsVp > max_VsVp )
+    {
+        max_VsVp = VsVp;
+        max_VsVp_elem_index = eindex;
+    }
+
+    /* min and max VpVsZ */
+    if ( VpVsZ < min_VpVsZ )
+    {
+        min_VpVsZ = VpVsZ;
+        min_VpVsZ_elem_index = eindex;
+    }
+    if ( VpVsZ > max_VpVsZ )
+    {
+        max_VpVsZ = VpVsZ;
+        max_VpVsZ_elem_index = eindex;
+    }
+
+    /* min Vs */
+    if ( Vs < min_Vs )
+    {
+        min_Vs = Vs;
+        min_Vs_elem_index = eindex;
+    }
+    if ( Vs > max_Vs )
+    {
+        max_Vs = Vs;
+        max_Vs_elem_index = eindex;
+    }
 
     } /* End of the loop over the mesh elements */
 
     /* Reducing to global values */
-    MPI_Reduce(&min_h_over_Vp,	 &min_h_over_Vp_global,	  1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&min_h_over_Vp,   &min_h_over_Vp_global,   1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
     if ( Param.theDampingStatisticsFlag == 1 )
     {
-	MPI_Reduce(&min_dt_factor_X, &min_dt_factor_X_global, 1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
-	MPI_Reduce(&min_dt_factor_Z, &min_dt_factor_Z_global, 1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
-	MPI_Reduce(&min_zeta,	     &min_zeta_global,	      1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
-	MPI_Reduce(&max_zeta,	     &max_zeta_global,	      1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
-	MPI_Reduce(&min_xi,	     &min_xi_global,	      1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
-	MPI_Reduce(&max_xi,	     &max_xi_global,	      1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
-	MPI_Reduce(&min_VsVp,	     &min_VsVp_global,	      1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
-	MPI_Reduce(&max_VsVp,	     &max_VsVp_global,	      1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
-	MPI_Reduce(&min_VpVsZ,	     &min_VpVsZ_global,	      1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
-	MPI_Reduce(&max_VpVsZ,	     &max_VpVsZ_global,	      1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
-	MPI_Reduce(&min_Vs,	     &min_Vs_global,	      1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
-	MPI_Reduce(&max_Vs,	     &max_Vs_global,	      1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
+    MPI_Reduce(&min_dt_factor_X, &min_dt_factor_X_global, 1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&min_dt_factor_Z, &min_dt_factor_Z_global, 1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&min_zeta,        &min_zeta_global,        1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&max_zeta,        &max_zeta_global,        1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
+    MPI_Reduce(&min_xi,      &min_xi_global,          1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&max_xi,      &max_xi_global,          1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
+    MPI_Reduce(&min_VsVp,        &min_VsVp_global,        1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&max_VsVp,        &max_VsVp_global,        1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
+    MPI_Reduce(&min_VpVsZ,       &min_VpVsZ_global,       1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&max_VpVsZ,       &max_VpVsZ_global,       1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
+    MPI_Reduce(&min_Vs,      &min_Vs_global,          1, MPI_DOUBLE, MPI_MIN, 0, comm_solver);
+    MPI_Reduce(&max_Vs,      &max_Vs_global,          1, MPI_DOUBLE, MPI_MAX, 0, comm_solver);
     }
 
     /* Inform everyone about the global values */
     MPI_Bcast(&min_h_over_Vp_global,   1, MPI_DOUBLE, 0, comm_solver);
     if ( Param.theDampingStatisticsFlag == 1 )
     {
-	MPI_Bcast(&min_dt_factor_X_global, 1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&min_dt_factor_Z_global, 1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&min_zeta_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&max_zeta_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&min_xi_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&max_xi_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&min_VsVp_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&max_VsVp_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&min_VpVsZ_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&max_VpVsZ_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&min_Vs_global,	   1, MPI_DOUBLE, 0, comm_solver);
-	MPI_Bcast(&max_Vs_global,	   1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&min_dt_factor_X_global, 1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&min_dt_factor_Z_global, 1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&min_zeta_global,    1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&max_zeta_global,    1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&min_xi_global,      1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&max_xi_global,      1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&min_VsVp_global,    1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&max_VsVp_global,    1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&min_VpVsZ_global,       1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&max_VpVsZ_global,       1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&min_Vs_global,      1, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(&max_Vs_global,      1, MPI_DOUBLE, 0, comm_solver);
     }
 
     /* go for damping statistics */
     if ( Param.theDampingStatisticsFlag == 1 )
     {
-	damping_statistics(min_xi_global,   max_xi_global,   min_zeta_global,  max_zeta_global,
-			   min_VsVp_global, max_VsVp_global, min_VpVsZ_global, max_VpVsZ_global,
-			   min_Vs_global,   max_Vs_global);
+    damping_statistics(min_xi_global,   max_xi_global,   min_zeta_global,  max_zeta_global,
+               min_VsVp_global, max_VsVp_global, min_VpVsZ_global, max_VpVsZ_global,
+               min_Vs_global,   max_Vs_global);
     }
 
     /* Static global variable for the critical delta t */
@@ -3005,33 +3178,33 @@ static void solver_set_critical_T()
     MPI_Barrier( comm_solver );
     if (Global.myID == 0)
     {
-	if ( Param.theDampingStatisticsFlag == 1 )
-	{
-	    printf("\n\n Critical delta t related information: \n\n");
-	    printf("\t 1. The minimum h/Vp	   = %.6f \n", min_h_over_Vp_global);
-	    printf("\t 2. The minimum dt X	   = %.6f \n", min_dt_factor_X_global);
-	    printf("\t 3. The minimum dt Z	   = %.6f \n", min_dt_factor_Z_global);
-	    printf("\t 4. The minimum zeta	   = %.6f \n", min_zeta_global);
-	    printf("\t 5. The maximum zeta	   = %.6f \n", max_zeta_global);
-	    printf("\t 6. The minimum xi	   = %.6f \n", min_xi_global);
-	    printf("\t 7. The maximum xi	   = %.6f \n", max_xi_global);
-	    printf("\t 8. The minimum Vs/Vp	   = %.6f \n", min_VsVp_global);
-	    printf("\t 9. The maximum Vs/Vp	   = %.6f \n", max_VsVp_global);
-	    printf("\t10. The minimum (Vp/Vs)*zeta = %.6f \n", min_VpVsZ_global);
-	    printf("\t11. The maximum (Vp/Vs)*zeta = %.6f \n", max_VpVsZ_global);
-	    printf("\t12. The minimum Vs	   = %.6f \n", min_Vs_global);
-	    printf("\t13. The maximum Vs	   = %.6f \n", max_Vs_global);
-	}
-	else
-	{
-	    printf("\n\n Critical delta t related information: \n\n");
-	    printf("\t The minimum h/Vp = %.6f \n\n", min_h_over_Vp_global);
-	}
+    if ( Param.theDampingStatisticsFlag == 1 )
+    {
+        printf("\n\n Critical delta t related information: \n\n");
+        printf("\t 1. The minimum h/Vp     = %.6f \n", min_h_over_Vp_global);
+        printf("\t 2. The minimum dt X     = %.6f \n", min_dt_factor_X_global);
+        printf("\t 3. The minimum dt Z     = %.6f \n", min_dt_factor_Z_global);
+        printf("\t 4. The minimum zeta     = %.6f \n", min_zeta_global);
+        printf("\t 5. The maximum zeta     = %.6f \n", max_zeta_global);
+        printf("\t 6. The minimum xi       = %.6f \n", min_xi_global);
+        printf("\t 7. The maximum xi       = %.6f \n", max_xi_global);
+        printf("\t 8. The minimum Vs/Vp    = %.6f \n", min_VsVp_global);
+        printf("\t 9. The maximum Vs/Vp    = %.6f \n", max_VsVp_global);
+        printf("\t10. The minimum (Vp/Vs)*zeta = %.6f \n", min_VpVsZ_global);
+        printf("\t11. The maximum (Vp/Vs)*zeta = %.6f \n", max_VpVsZ_global);
+        printf("\t12. The minimum Vs       = %.6f \n", min_Vs_global);
+        printf("\t13. The maximum Vs       = %.6f \n", max_Vs_global);
+    }
+    else
+    {
+        printf("\n\n Critical delta t related information: \n\n");
+        printf("\t The minimum h/Vp = %.6f \n\n", min_h_over_Vp_global);
+    }
     }
 
 #ifdef AUTO_DELTA_T
     /* Set the critical delta T */
-    Param.theDeltaT	     = Global.theCriticalT;
+    Param.theDeltaT      = Global.theCriticalT;
     Param.theDeltaTSquared = Param.theDeltaT * Param.theDeltaT;
 
     /* Set the total steps */
@@ -3041,94 +3214,94 @@ static void solver_set_critical_T()
     /* Printing location and element properties of the maximum values */
     if ( Param.theDampingStatisticsFlag == 1 )
     {
-	/* Local variables */
+    /* Local variables */
 
-	double	local_extremes[13],
-		global_extremes[13];
-	int32_t element_indices[13];
-	int32_t extreme_index;
+    double  local_extremes[13],
+        global_extremes[13];
+    int32_t element_indices[13];
+    int32_t extreme_index;
 
-	local_extremes[0]  = min_h_over_Vp;
-	local_extremes[1]  = min_dt_factor_X;
-	local_extremes[2]  = min_dt_factor_Z;
-	local_extremes[3]  = min_zeta;
-	local_extremes[4]  = max_zeta;
-	local_extremes[5]  = min_xi;
-	local_extremes[6]  = max_xi;
-	local_extremes[7]  = min_VsVp;
-	local_extremes[8]  = max_VsVp;
-	local_extremes[9]  = min_VpVsZ;
-	local_extremes[10] = max_VpVsZ;
-	local_extremes[11] = min_Vs;
-	local_extremes[12] = max_Vs;
+    local_extremes[0]  = min_h_over_Vp;
+    local_extremes[1]  = min_dt_factor_X;
+    local_extremes[2]  = min_dt_factor_Z;
+    local_extremes[3]  = min_zeta;
+    local_extremes[4]  = max_zeta;
+    local_extremes[5]  = min_xi;
+    local_extremes[6]  = max_xi;
+    local_extremes[7]  = min_VsVp;
+    local_extremes[8]  = max_VsVp;
+    local_extremes[9]  = min_VpVsZ;
+    local_extremes[10] = max_VpVsZ;
+    local_extremes[11] = min_Vs;
+    local_extremes[12] = max_Vs;
 
-	global_extremes[0]  = min_h_over_Vp_global;
-	global_extremes[1]  = min_dt_factor_X_global;
-	global_extremes[2]  = min_dt_factor_Z_global;
-	global_extremes[3]  = min_zeta_global;
-	global_extremes[4]  = max_zeta_global;
-	global_extremes[5]  = min_xi_global;
-	global_extremes[6]  = max_xi_global;
-	global_extremes[7]  = min_VsVp_global;
-	global_extremes[8]  = max_VsVp_global;
-	global_extremes[9]  = min_VpVsZ_global;
-	global_extremes[10] = max_VpVsZ_global;
-	global_extremes[11] = min_Vs_global;
-	global_extremes[12] = max_Vs_global;
+    global_extremes[0]  = min_h_over_Vp_global;
+    global_extremes[1]  = min_dt_factor_X_global;
+    global_extremes[2]  = min_dt_factor_Z_global;
+    global_extremes[3]  = min_zeta_global;
+    global_extremes[4]  = max_zeta_global;
+    global_extremes[5]  = min_xi_global;
+    global_extremes[6]  = max_xi_global;
+    global_extremes[7]  = min_VsVp_global;
+    global_extremes[8]  = max_VsVp_global;
+    global_extremes[9]  = min_VpVsZ_global;
+    global_extremes[10] = max_VpVsZ_global;
+    global_extremes[11] = min_Vs_global;
+    global_extremes[12] = max_Vs_global;
 
-	element_indices[0]  = min_h_over_Vp_elem_index;
-	element_indices[1]  = min_dt_factor_X_elem_index;
-	element_indices[2]  = min_dt_factor_Z_elem_index;
-	element_indices[3]  = min_zeta_elem_index;
-	element_indices[4]  = max_zeta_elem_index;
-	element_indices[5]  = min_xi_elem_index;
-	element_indices[6]  = max_xi_elem_index;
-	element_indices[7]  = min_VsVp_elem_index;
-	element_indices[8]  = max_VsVp_elem_index;
-	element_indices[9]  = min_VpVsZ_elem_index;
-	element_indices[10] = max_VpVsZ_elem_index;
-	element_indices[11] = min_Vs_elem_index;
-	element_indices[12] = max_Vs_elem_index;
+    element_indices[0]  = min_h_over_Vp_elem_index;
+    element_indices[1]  = min_dt_factor_X_elem_index;
+    element_indices[2]  = min_dt_factor_Z_elem_index;
+    element_indices[3]  = min_zeta_elem_index;
+    element_indices[4]  = max_zeta_elem_index;
+    element_indices[5]  = min_xi_elem_index;
+    element_indices[6]  = max_xi_elem_index;
+    element_indices[7]  = min_VsVp_elem_index;
+    element_indices[8]  = max_VsVp_elem_index;
+    element_indices[9]  = min_VpVsZ_elem_index;
+    element_indices[10] = max_VpVsZ_elem_index;
+    element_indices[11] = min_Vs_elem_index;
+    element_indices[12] = max_Vs_elem_index;
 
-	/* Printing section title */
-	MPI_Barrier( comm_solver );
-	if (Global.myID == 0)
-	{
-	    printf("\n\t Their corresponding element properties and coordinates are: \n\n");
-	}
+    /* Printing section title */
+    MPI_Barrier( comm_solver );
+    if (Global.myID == 0)
+    {
+        printf("\n\t Their corresponding element properties and coordinates are: \n\n");
+    }
 
-	/* Loop over the six extreme values */
-	MPI_Barrier( comm_solver );
-	for ( extreme_index = 0; extreme_index < 13; extreme_index++ )
-	{
-	    MPI_Barrier( comm_solver );
-	    if ( local_extremes[extreme_index] == global_extremes[extreme_index] )
-	    {
-		tick_t	 ldb[3];
-		elem_t	*elemp;
-		edata_t *edata;
-		int lnid0 = Global.myMesh->elemTable[element_indices[extreme_index]].lnid[0];
+    /* Loop over the six extreme values */
+    MPI_Barrier( comm_solver );
+    for ( extreme_index = 0; extreme_index < 13; extreme_index++ )
+    {
+        MPI_Barrier( comm_solver );
+        if ( local_extremes[extreme_index] == global_extremes[extreme_index] )
+        {
+        tick_t   ldb[3];
+        elem_t  *elemp;
+        edata_t *edata;
+        int lnid0 = Global.myMesh->elemTable[element_indices[extreme_index]].lnid[0];
 
-		ldb[0] = Global.myMesh->nodeTable[lnid0].x;
-		ldb[1] = Global.myMesh->nodeTable[lnid0].y;
-		ldb[2] = Global.myMesh->nodeTable[lnid0].z;
+        ldb[0] = Global.myMesh->nodeTable[lnid0].x;
+        ldb[1] = Global.myMesh->nodeTable[lnid0].y;
+        ldb[2] = Global.myMesh->nodeTable[lnid0].z;
 
-		elemp  = &Global.myMesh->elemTable[element_indices[extreme_index]];
-		edata  = (edata_t *)elemp->data;
+        elemp  = &Global.myMesh->elemTable[element_indices[extreme_index]];
+        edata  = (edata_t *)elemp->data;
 
-		printf("\t For extreme value No. %d:", extreme_index + 1);
-		printf("\n\t\t h = %.6f, Vp = %.6f Vs = %.6f rho = %.6f",
-		       edata->edgesize, edata->Vp , edata->Vs, edata->rho);
-		printf("\n\t\t by thread %d, element_coord = (%.6f, %.6f, %.6f)\n\n",
-		       Global.myID, ldb[0] * Global.myMesh->ticksize, ldb[1] * Global.myMesh->ticksize,
-		       ldb[2] * Global.myMesh->ticksize);
-	    }
-	    MPI_Barrier( comm_solver );
-	} /* End of loop over the extreme values */
+        printf("\t For extreme value No. %d:", extreme_index + 1);
+        printf("\n\t\t h = %.6f, Vp = %.6f Vs = %.6f rho = %.6f",
+               edata->edgesize, edata->Vp , edata->Vs, edata->rho);
+        printf("\n\t\t by thread %d, element_coord = (%.6f, %.6f, %.6f)\n\n",
+               Global.myID, ldb[0] * Global.myMesh->ticksize, ldb[1] * Global.myMesh->ticksize,
+               ldb[2] * Global.myMesh->ticksize);
+        }
+        MPI_Barrier( comm_solver );
+    } /* End of loop over the extreme values */
 
-	if (Global.myID == 0) {
-	    fflush (stdout);
-	}
+    if (Global.myID == 0) {
+        fflush (stdout);
+    }
     } /* end if damping statistics */
 
     return;
@@ -3147,7 +3320,7 @@ static void get_minimum_edge()
 
     /* Find the minimal h/Vp in the domain */
     for (eindex = 0; eindex < Global.myMesh->lenum; eindex++) {
-        elem_t *elemp;	 /* pointer to the mesh database */
+        elem_t *elemp;   /* pointer to the mesh database */
         edata_t *edata;
         double h;
 
@@ -3168,7 +3341,7 @@ static void get_minimum_edge()
     MPI_Bcast(&min_h_global, 1, MPI_DOUBLE, 0, comm_solver);
 
     if (Global.myID == 0) {
-        printf("\nThe minimal h	 = %.6f\n\n\n", min_h_global);
+        printf("\nThe minimal h  = %.6f\n\n\n", min_h_global);
     }
 
     Global.theNumericsInformation.minimumh=min_h_global;
@@ -3238,6 +3411,13 @@ void mu_and_lambda(double *theMu, double *theLambda,
 {
 
     double mu, lambda;
+
+// This is added for the treatment of air elements
+    if ( ( edata->Vp == -1 ) && ( edata->rho == 0 ) ) {
+        *theMu     = 0;
+        *theLambda = 0;
+        return;
+    }
 
     mu = edata->rho * edata->Vs * edata->Vs;
 
@@ -3319,10 +3499,37 @@ static void solver_init()
     Global.mySolver->tm1    = (fvector_t *)calloc(Global.myMesh->nharbored, sizeof(fvector_t));
     Global.mySolver->tm2    = (fvector_t *)calloc(Global.myMesh->nharbored, sizeof(fvector_t));
     Global.mySolver->force  = (fvector_t *)calloc(Global.myMesh->nharbored, sizeof(fvector_t));
-    Global.mySolver->conv_shear_1 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
-    Global.mySolver->conv_shear_2 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
-    Global.mySolver->conv_kappa_1 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
-    Global.mySolver->conv_kappa_2 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
+
+    if (Param.theTypeOfDamping >= BKT) {
+        Global.mySolver->conv_shear_1 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
+        Global.mySolver->conv_shear_2 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
+        Global.mySolver->conv_kappa_1 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
+        Global.mySolver->conv_kappa_2 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
+
+        if ( (Global.mySolver->conv_shear_1 == NULL) ||
+             (Global.mySolver->conv_shear_2 == NULL) ||
+             (Global.mySolver->conv_kappa_1 == NULL) ||
+             (Global.mySolver->conv_kappa_2 == NULL) ) {
+
+            fprintf(stderr, "Thread %d: solver_init: out of memory\n", Global.myID);
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
+    }
+
+    if (Param.theTypeOfDamping >= BKT3) {
+        Global.mySolver->conv_shear_3 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
+        Global.mySolver->conv_kappa_3 = (fvector_t *)calloc(8 * Global.myMesh->lenum, sizeof(fvector_t));
+
+        if ( (Global.mySolver->conv_shear_3 == NULL) ||
+             (Global.mySolver->conv_kappa_3 == NULL) ) {
+
+            fprintf(stderr, "Thread %d: solver_init: out of memory\n", Global.myID);
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
+
+    }
 
     Global.mySolver->dn_sched = schedule_new();
     Global.mySolver->an_sched = schedule_new();
@@ -3331,11 +3538,7 @@ static void solver_init()
          (Global.mySolver->nTable == NULL) ||
          (Global.mySolver->tm1    == NULL) ||
          (Global.mySolver->tm2    == NULL) ||
-         (Global.mySolver->force  == NULL) ||
-         (Global.mySolver->conv_shear_1 == NULL) ||
-         (Global.mySolver->conv_shear_2 == NULL) ||
-         (Global.mySolver->conv_kappa_1 == NULL) ||
-         (Global.mySolver->conv_kappa_2 == NULL) ) {
+         (Global.mySolver->force  == NULL)  ) {
 
         fprintf(stderr, "Thread %d: solver_init: out of memory\n", Global.myID);
         MPI_Abort(MPI_COMM_WORLD, ERROR);
@@ -3375,6 +3578,12 @@ static void solver_init()
 
         double zeta, a, b;
 
+        /* yigit says -- Buildings assume 5% damping */
+
+        int32_t   n_0;
+        double    z_m;
+
+
         /* Note the difference between the two tables */
         elemp = &Global.myMesh->elemTable[eindex];
         edata = (edata_t *)elemp->data;
@@ -3393,11 +3602,24 @@ static void solver_init()
         /* Old formula for damping */
         /* zeta = (edata->Vs < 1500) ? 25 / edata->Vs : 5 / edata->Vs; */
 
+        n_0 = Global.myMesh->elemTable[eindex].lnid[0];
+        z_m = Global.theZForMeshOrigin + (Global.myOctree->ticksize)*Global.myMesh->nodeTable[n_0].z;
+
+        /* Shift the domain if buildings are considered */
+        if ( Param.includeBuildings == YES ) {
+            z_m -= get_surface_shift();
+        }
+
         /* New formula for damping according to Graves */
-        	zeta = 10 / edata->Vs;
+        zeta = 25.0 / edata->Vs;
+
+        /* If element is in a building, use 5% damping */
+        if ( (z_m < 0) && ( Param.includeBuildings == YES  ) ) { /* Dorian says: This is only valid for buildings  */
+            zeta = 0.05;
+        }
 
         if ( zeta > Param.theThresholdDamping ) {
-        	zeta = Param.theThresholdDamping;
+            zeta = Param.theThresholdDamping;
         }
 
         /* the a,b coefficients */
@@ -3436,6 +3658,23 @@ static void solver_init()
         mass = edata->rho * edata->edgesize * edata->edgesize *edata->edgesize;
         M    = mass / 8;
 
+        /* Essential for topography module:   */
+        /* Here I correct the nodal mass in the case that topography exists  */
+        double nodesMass[8]={0};
+
+        /* get element coordinates */
+        double  xo       = Global.myMesh->ticksize * Global.myMesh->nodeTable[lnid0].x;
+        double  yo       = Global.myMesh->ticksize * Global.myMesh->nodeTable[lnid0].y;
+        double  zo       = Global.myMesh->ticksize * Global.myMesh->nodeTable[lnid0].z;
+
+        if ( Param.includeTopography == YES ) {
+            toponodes_mass( eindex, nodesMass, M, xo, yo, zo );
+        } else {
+            for (j = 0; j < 8; j++) {
+                nodesMass[j] = M;
+            }
+        }
+
         /* For each node */
         for (j = 0; j < 8; j++)
         {
@@ -3446,12 +3685,14 @@ static void solver_init()
             lnid = elemp->lnid[j];
             np   = &Global.mySolver->nTable[lnid];
 
+            M = nodesMass[j];
+
             np->mass_simple += M;
 
             /* loop for each axis */
             for (axis = 0; axis < 3; axis++ )
             {
-                np->mass_minusaM[axis]	-= (Param.theDeltaT * a * M);
+                np->mass_minusaM[axis]  -= (Param.theDeltaT * a * M);
                 np->mass2_minusaM[axis] -= (Param.theDeltaT * a * M);
 
 #ifdef BOUNDARY
@@ -3463,7 +3704,7 @@ static void solver_init()
                 }
 #endif /* BOUNDARY */
 
-                np->mass_minusaM[axis]	+= M;
+                np->mass_minusaM[axis]  += M;
                 np->mass2_minusaM[axis] += (M * 2);
 
             } /* end loop for each axis */
@@ -3489,22 +3730,22 @@ static void solver_init()
 #endif /* DEBUG */
 
     schedule_prepare(Global.mySolver->dn_sched, c_outsize, c_insize,
-		     s_outsize, s_insize);
+             s_outsize, s_insize);
 
     schedule_prepare(Global.mySolver->an_sched, c_outsize, c_insize,
-		     s_outsize, s_insize);
+             s_outsize, s_insize);
 
     /* Send mass information of dangling nodes to their owners */
     schedule_senddata(Global.mySolver->dn_sched, Global.mySolver->nTable,
-	      sizeof(n_t) / sizeof(solver_float), CONTRIBUTION, DN_MASS_MSG);
+          sizeof(n_t) / sizeof(solver_float), CONTRIBUTION, DN_MASS_MSG);
 
     /* Distribute the mass from dangling nodes to anchored nodes. (local) */
     compute_adjust(Global.mySolver->nTable, sizeof(n_t) / sizeof(solver_float),
-		   DISTRIBUTION);
+           DISTRIBUTION);
 
     /* Send mass information of anchored nodes to their owner processors*/
     schedule_senddata(Global.mySolver->an_sched, Global.mySolver->nTable,
-	      sizeof(n_t) / sizeof(solver_float), CONTRIBUTION, AN_MASS_MSG);
+          sizeof(n_t) / sizeof(solver_float), CONTRIBUTION, AN_MASS_MSG);
 
     return;
 }
@@ -3523,15 +3764,15 @@ solver_printstat_to_stream( mysolver_t* solver, FILE* out )
      * the last 4 values are for the anchored nodes.
      */
     enum solver_msg_idx_t {
-	I_DN_C_P,	/**< 0: Dangling contribution processor count */
-	I_DN_C_N,	/**< 1: Dangling contribution node count */
-	I_DN_S_P,	/**< 2: Dangling shared processor count */
-	I_DN_S_N,	/**< 3: Dangling shared node count */
-	I_AN_C_P,	/**< 4: Shared contribution processor count */
-	I_AN_C_N,	/**< 5: Shared contribution node count */
-	I_AN_S_P,	/**< 6: Shared shared processor count */
-	I_AN_S_N,	/**< 7: Shared shared node count */
-	I_SCHED_LAST	/**< 8: Number of counters */
+    I_DN_C_P,   /**< 0: Dangling contribution processor count */
+    I_DN_C_N,   /**< 1: Dangling contribution node count */
+    I_DN_S_P,   /**< 2: Dangling shared processor count */
+    I_DN_S_N,   /**< 3: Dangling shared node count */
+    I_AN_C_P,   /**< 4: Shared contribution processor count */
+    I_AN_C_N,   /**< 5: Shared contribution node count */
+    I_AN_S_P,   /**< 6: Shared shared processor count */
+    I_AN_S_N,   /**< 7: Shared shared node count */
+    I_SCHED_LAST    /**< 8: Number of counters */
     };
 
     int32_t* recv_counts = NULL;
@@ -3551,48 +3792,48 @@ solver_printstat_to_stream( mysolver_t* solver, FILE* out )
 
 
     if (Global.myID == 0) {
-	/* allocate a buffer in PE 0 to receive stats from all other PEs */
-	XMALLOC_VAR_N( recv_counts, int32_t, I_SCHED_LAST * Global.theGroupSize );
+    /* allocate a buffer in PE 0 to receive stats from all other PEs */
+    XMALLOC_VAR_N( recv_counts, int32_t, I_SCHED_LAST * Global.theGroupSize );
     }
 
     MPI_Gather( send_counts, I_SCHED_LAST, MPI_INT,
-		recv_counts, I_SCHED_LAST, MPI_INT, 0, comm_solver );
+        recv_counts, I_SCHED_LAST, MPI_INT, 0, comm_solver );
 
     if (Global.myID == 0) {
-	int      pe_id;
-	int32_t* pe_counts = recv_counts;
+    int      pe_id;
+    int32_t* pe_counts = recv_counts;
 
-	fprintf( out, "# Solver communication schedule summary:\n"
-		 "#   PE dc_p     dc_n ds_p     ds_n ac_p     ac_n as_p"
-		 "     as_n total_ncnt\n" );
+    fprintf( out, "# Solver communication schedule summary:\n"
+         "#   PE dc_p     dc_n ds_p     ds_n ac_p     ac_n as_p"
+         "     as_n total_ncnt\n" );
 
-	for (pe_id = 0; pe_id < Global.theGroupSize; pe_id++) {
-	    /* print a row for a PE, each row has I_SCHED_LAST (8) items
-	     * besides the pe_id and the total node sum at the end */
-	    int pe_comm_count = pe_counts[I_DN_C_N] +
-				pe_counts[I_DN_S_N] +
-				pe_counts[I_AN_C_N] +
-				pe_counts[I_AN_S_N];
+    for (pe_id = 0; pe_id < Global.theGroupSize; pe_id++) {
+        /* print a row for a PE, each row has I_SCHED_LAST (8) items
+         * besides the pe_id and the total node sum at the end */
+        int pe_comm_count = pe_counts[I_DN_C_N] +
+                pe_counts[I_DN_S_N] +
+                pe_counts[I_AN_C_N] +
+                pe_counts[I_AN_S_N];
 
-	    fprintf( out, "%6d %4d %8d %4d %8d %4d %8d %4d %8d %10d\n",
-		     pe_id,
-		     pe_counts[I_DN_C_P],
-		     pe_counts[I_DN_C_N],
-		     pe_counts[I_DN_S_P],
-		     pe_counts[I_DN_S_N],
-		     pe_counts[I_AN_C_P],
-		     pe_counts[I_AN_C_N],
-		     pe_counts[I_AN_S_P],
-		     pe_counts[I_AN_S_N],
-		     pe_comm_count );
+        fprintf( out, "%6d %4d %8d %4d %8d %4d %8d %4d %8d %10d\n",
+             pe_id,
+             pe_counts[I_DN_C_P],
+             pe_counts[I_DN_C_N],
+             pe_counts[I_DN_S_P],
+             pe_counts[I_DN_S_N],
+             pe_counts[I_AN_C_P],
+             pe_counts[I_AN_C_N],
+             pe_counts[I_AN_S_P],
+             pe_counts[I_AN_S_N],
+             pe_comm_count );
 
-	    pe_counts += I_SCHED_LAST; /* advance a row of size I_SCHED_LAST */
-	}
+        pe_counts += I_SCHED_LAST; /* advance a row of size I_SCHED_LAST */
+    }
 
-	fprintf( out, "\n\n" );
-	fflush( out );
+    fprintf( out, "\n\n" );
+    fflush( out );
 
-	free( recv_counts );
+    free( recv_counts );
     }
 
     return;
@@ -3608,14 +3849,14 @@ solver_printstat( mysolver_t* solver )
     FILE* stat_out = NULL;
 
     if (Global.myID == 0) {
-	stat_out = hu_fopen( Param.theScheduleStatFilename, "w" );
+    stat_out = hu_fopen( Param.theScheduleStatFilename, "w" );
     }
 
     solver_printstat_to_stream( solver, stat_out );
 
     if (Global.myID == 0) {
-	hu_fclose( stat_out );
-	xfree_char( & Param.theScheduleStatFilename );
+    hu_fclose( stat_out );
+    xfree_char( & Param.theScheduleStatFilename );
     }
 }
 
@@ -3627,7 +3868,7 @@ solver_printstat( mysolver_t* solver )
 static void solver_delete()
 {
     if (Global.mySolver == NULL) {
-	return;
+    return;
     }
 
     free(Global.mySolver->eTable);
@@ -3637,10 +3878,17 @@ static void solver_delete()
     free(Global.mySolver->tm2);
     free(Global.mySolver->force);
 
-    free(Global.mySolver->conv_shear_1);
-    free(Global.mySolver->conv_shear_2);
-    free(Global.mySolver->conv_kappa_1);
-    free(Global.mySolver->conv_kappa_2);
+    if ( Param.theTypeOfDamping >= BKT ) {
+        free(Global.mySolver->conv_shear_1);
+        free(Global.mySolver->conv_shear_2);
+        free(Global.mySolver->conv_kappa_1);
+        free(Global.mySolver->conv_kappa_2);
+
+        if ( Param.theTypeOfDamping >= BKT3 ) {
+            free(Global.mySolver->conv_shear_3);
+            free(Global.mySolver->conv_kappa_3);
+        }
+    }
 
     schedule_delete(Global.mySolver->dn_sched);
     schedule_delete(Global.mySolver->an_sched);
@@ -3649,21 +3897,57 @@ static void solver_delete()
 }
 
 static int
-read_myForces( int32_t timestep )
+read_myForces( int32_t timestep, double dt )
 {
     off_t   whereToRead;
     size_t  to_read, read_count;
+    int interval, i;
 
-    whereToRead = ((off_t)sizeof(int32_t))
-		+ Global.theNodesLoaded * sizeof(int32_t)
-		+ Global.theNodesLoaded * timestep * sizeof(double) * 3;
+    if ( get_sourceType() == SRFH ) {
+        double source_dt = get_srfhdt();
+        double T         = dt * timestep;
 
-    hu_fseeko( Global.fpsource, whereToRead, SEEK_SET );
+        vector3D_t* aux1 = calloc( Global.theNodesLoaded, sizeof(vector3D_t) );
+        vector3D_t* aux2 = calloc( Global.theNodesLoaded, sizeof(vector3D_t) );
 
-    to_read    = Global.theNodesLoaded * 3;
-    read_count = hu_fread( Global.myForces, sizeof(double), to_read, Global.fpsource );
+        if ( aux1 == NULL || aux2 == NULL) {
+            solver_abort( "read_myforces", "memory allocation failed",
+                    "Cannot allocate memory for Global.myForces interpolation \n" );
+        }
 
-    return 0;	/* if we got here everything went OK */
+        interval = floor(T/source_dt);
+
+        /* read first interval */
+        whereToRead = ((off_t)sizeof(int32_t))
+                + Global.theNodesLoaded * sizeof(int32_t)
+        + Global.theNodesLoaded * interval * sizeof(double) * 3;
+
+        hu_fseeko( Global.fpsource, whereToRead, SEEK_SET );
+
+        to_read    = Global.theNodesLoaded * 3;
+        read_count = hu_fread( aux1, sizeof(double), to_read, Global.fpsource );
+        read_count = hu_fread( aux2, sizeof(double), to_read, Global.fpsource );
+
+        for (i = 0; i <  Global.theNodesLoaded; i++) {
+            Global.myForces [ i ].x [0] = aux1[ i ].x [0] + ( aux2[ i ].x [0] - aux1[ i ].x [0] )/source_dt*( T - interval * source_dt);
+            Global.myForces [ i ].x [1] = aux1[ i ].x [1] + ( aux2[ i ].x [1] - aux1[ i ].x [1] )/source_dt*( T - interval * source_dt);
+            Global.myForces [ i ].x [2] = aux1[ i ].x [2] + ( aux2[ i ].x [2] - aux1[ i ].x [2] )/source_dt*( T - interval * source_dt);
+        }
+        free(aux1);
+        free(aux2);
+
+    } else { // Todo: Doriam says: Optimize other source types (POINT, PLANE, PLANEWITHKINKS) as we did for SRFH if we plan to keep them
+        whereToRead = ((off_t)sizeof(int32_t))
+        + Global.theNodesLoaded * sizeof(int32_t)
+        + Global.theNodesLoaded * timestep * sizeof(double) * 3;
+
+        hu_fseeko( Global.fpsource, whereToRead, SEEK_SET );
+
+        to_read    = Global.theNodesLoaded * 3;
+        read_count = hu_fread( Global.myForces, sizeof(double), to_read, Global.fpsource );
+    }
+
+    return 0;   /* if we got here everything went OK */
 }
 
 
@@ -3681,26 +3965,26 @@ solver_debug_overflow( mysolver_t* solver, mesh_t* mesh, int step )
 
     /* find the min and max X displacement components */
     for (nindex = 0; nindex < mesh->nharbored; nindex++) {
-	fvector_t* tm2Disp;
-	n_t* np;
+    fvector_t* tm2Disp;
+    n_t* np;
 
-	np      = &solver->nTable[nindex];
-	tm2Disp = solver->tm2 + nindex;
+    np      = &solver->nTable[nindex];
+    tm2Disp = solver->tm2 + nindex;
 
-	max_disp = (max_disp > tm2Disp->f[0]) ? max_disp : tm2Disp->f[0];
-	min_disp = (min_disp < tm2Disp->f[0]) ? min_disp : tm2Disp->f[0];
+    max_disp = (max_disp > tm2Disp->f[0]) ? max_disp : tm2Disp->f[0];
+    min_disp = (min_disp < tm2Disp->f[0]) ? min_disp : tm2Disp->f[0];
     }
 
     /* get global min and max values */
     MPI_Reduce( &min_disp, &global_min_disp, 1, MPI_DOUBLE,
-		MPI_MIN, 0, comm_solver );
+        MPI_MIN, 0, comm_solver );
 
     MPI_Reduce( &max_disp, &global_max_disp, 1, MPI_DOUBLE,
-		MPI_MAX, 0, comm_solver );
+        MPI_MAX, 0, comm_solver );
 
     if (Global.myID == 0) {
-	printf("Timestep %d: max_dx = %.6f min_dx = %.6f\n",
-	       step, global_max_disp, global_min_disp);
+    printf("Timestep %d: max_dx = %.6f min_dx = %.6f\n",
+           step, global_max_disp, global_min_disp);
     }
 }
 
@@ -3716,15 +4000,15 @@ darray_has_nan_nd( const double* v, int dim, const size_t len[] )
     int     ret = hu_darray_has_nan_nd( v, dim, len, idx );
 
     if (ret != 0) {
-	int i;
+    int i;
 
-	fputs( "WARNING!: Found NAN value at index", stderr );
+    fputs( "WARNING!: Found NAN value at index", stderr );
 
-	for (i = 0; i < dim; i++) {
-	    fprintf( stderr, " %zu", idx[i] );
-	}
+    for (i = 0; i < dim; i++) {
+        fprintf( stderr, " %zu", idx[i] );
+    }
 
-	fputc( '\n', stderr );
+    fputc( '\n', stderr );
     }
 
     free( idx );
@@ -3749,13 +4033,13 @@ fvector_array_has_nan( const fvector_t* f, size_t len, const char* varname )
 
     if (darray_has_nan_nd( v, 2, lengths ) != 0) {
         if (NULL == varname) {
-	    varname = "(unknown)";
-	}
-	fputs( "fvector_t varname=", stderr );
-	fputs( varname, stderr );
-	fputc( '\n', stderr );
+        varname = "(unknown)";
+    }
+    fputs( "fvector_t varname=", stderr );
+    fputs( varname, stderr );
+    fputc( '\n', stderr );
 
-	return -1;
+    return -1;
     }
 
     return 0;
@@ -3776,8 +4060,8 @@ solver_check_nan( mysolver_t* solver, int node_count, int time_step )
     int ret3 = fvector_array_has_nan( solver->force, node_count, "force" );
 
     if ((ret1 | ret2 | ret3) != 0) {
-	hu_solver_abort( __FUNCTION_NAME, NULL,
-			 "Found a NAN value at timestep %d", time_step );
+    hu_solver_abort( __FUNCTION_NAME, NULL,
+             "Found a NAN value at timestep %d", time_step );
     }
 }
 
@@ -3815,24 +4099,24 @@ static void solver_update_status( int step, const int start_step ){
 
     if (Global.myID == 0) {
 
-	CurrTime = Timer_Value( "Total Wall Clock", 0 );
+    CurrTime = Timer_Value( "Total Wall Clock", 0 );
 
-	if (lastCheckedTime==0) {
-	    lastCheckedTime = CurrTime;
-	    return;
-	}
+    if (lastCheckedTime==0) {
+        lastCheckedTime = CurrTime;
+        return;
+    }
 
-	monitor_print( "*" );
+    monitor_print( "*" );
 
         if (step % Param.monitor_stats_rate == 0) {
-	    interval = CurrTime - lastCheckedTime;
-	    if (interval > Global.slowestTimeSteps) Global.slowestTimeSteps = interval;
-	    if (interval < Global.fastestTimeSteps) Global.fastestTimeSteps = interval;
+        interval = CurrTime - lastCheckedTime;
+        if (interval > Global.slowestTimeSteps) Global.slowestTimeSteps = interval;
+        if (interval < Global.fastestTimeSteps) Global.fastestTimeSteps = interval;
             monitor_print( "     Sim=% 12.6f     ETA=% 6.1f    WC=% 6.1f\n",
                            step * Param.theDeltaT,
-			   ((Param.theTotalSteps - step) / Param.monitor_stats_rate) * interval,
+               ((Param.theTotalSteps - step) / Param.monitor_stats_rate) * interval,
                            CurrTime);
-	    lastCheckedTime = CurrTime;
+        lastCheckedTime = CurrTime;
         }
 
     }
@@ -3845,7 +4129,7 @@ static void solver_write_checkpoint( int step, int start_step ){
         ((step % Param.theCheckPointingRate) == 0)) {
 
         checkpoint_write( step, Global.myID, Global.myMesh, Param.theCheckPointingDirOut, Global.theGroupSize,
-			     Global.mySolver, comm_solver );
+                 Global.mySolver, comm_solver );
     }
 
 }
@@ -3911,7 +4195,7 @@ static void solver_nonlinear_state( mysolver_t *solver,
     if ( Param.includeNonlinearAnalysis == YES ) {
         Timer_Start( "Compute Non-linear Entities" );
         compute_nonlinear_state ( mesh, solver, Param.theNumberOfStations,
-                                  Param.myNumberOfStations, Param.myStations, Param.theDeltaT );
+                                  Param.myNumberOfStations, Param.myStations, Param.theDeltaT, step );
         if ( get_geostatic_total_time() > 0 ) {
             compute_bottom_reactions( mesh, solver, k1, k2, step, Param.theDeltaT );
         }
@@ -3927,11 +4211,11 @@ static void solver_nonlinear_state( mysolver_t *solver,
 }
 
 
-static void solver_read_source_forces( int step )
+static void solver_read_source_forces( int step, double dt )
 {
     Timer_Start( "Read My Forces" );
     if (Global.theNodesLoaded > 0) {
-        read_myForces( step );
+        read_myForces( step, dt );
     }
     Timer_Stop( "Read My Forces" );
 }
@@ -3965,17 +4249,18 @@ solver_compute_force_stiffness( mysolver_t *solver,
                                 fmatrix_t   k1[8][8],
                                 fmatrix_t   k2[8][8] )
 {
-	Timer_Start( "Compute addforces e" );
-	if(Param.theTypeOfDamping != BKT)
-	{
-		if (Param.theStiffness == EFFECTIVE) {
-			compute_addforce_effective( mesh, solver );
-		}
-		else if (Param.theStiffness == CONVENTIONAL) {
-			compute_addforce_conventional( mesh, solver, k1, k2 );
-		}
-	}
-	Timer_Stop( "Compute addforces e" );
+
+    Timer_Start( "Compute addforces e" );
+    if( ( Param.theTypeOfDamping < BKT   )   )
+    {
+        if (Param.theStiffness == EFFECTIVE) {
+            compute_addforce_effective( mesh, solver );
+        }
+        else if (Param.theStiffness == CONVENTIONAL) {
+            compute_addforce_conventional( mesh, solver, k1, k2 );
+        }
+    }
+    Timer_Stop( "Compute addforces e" );
 }
 
 
@@ -3986,22 +4271,33 @@ solver_compute_force_damping( mysolver_t *solver,
                               fmatrix_t   k1[8][8],
                               fmatrix_t   k2[8][8] )
 {
-	Timer_Start( "Damping addforce" );
+    Timer_Start( "Damping addforce" );
 
-	if(Param.theTypeOfDamping == RAYLEIGH  || Param.theTypeOfDamping == MASS)
-	{
-		damping_addforce(Global.myMesh, Global.mySolver, Global.theK1, Global.theK2);
-	}
-	else if(Param.theTypeOfDamping == BKT)
-	{
-		calc_conv(Global.myMesh, Global.mySolver, Param.theFreq, Param.theDeltaT, Param.theDeltaTSquared);
-		//addforce_conv(myMesh, mySolver, theFreq, theDeltaT, theDeltaTSquared);
-		constant_Q_addforce(Global.myMesh, Global.mySolver, Param.theFreq, Param.theDeltaT, Param.theDeltaTSquared);
-	}
-	else
-	{}
+    if(Param.theTypeOfDamping == RAYLEIGH  || Param.theTypeOfDamping == MASS)
+    {
+        /* Dorian says: The Mass and Rayleigh damping are implicitly considered in the nodal mass
+         * and the stiffness computation module  */
 
-	Timer_Stop( "Damping addforce" );
+        //damping_addforce(Global.myMesh, Global.mySolver, Global.theK1, Global.theK2);
+    }
+    else if(Param.theTypeOfDamping >= BKT)
+    {
+        /* Else, if damping is of the BKT family */
+        calc_conv(Global.myMesh, Global.mySolver, Param.theFreq, Param.theDeltaT, Param.theDeltaTSquared, Param.theTypeOfDamping);
+        constant_Q_addforce(Global.myMesh, Global.mySolver, Param.theFreq, Param.theDeltaT, Param.theDeltaTSquared, Param.theTypeOfDamping);
+
+        //conv_and_bktForceCombined(Global.myMesh, Global.mySolver, Param.theFreq, Param.theDeltaT, Param.theDeltaTSquared, Param.theTypeOfDamping);
+
+    }
+    else
+    {
+//      /* Should never reach this point */
+//        solver_abort( __FUNCTION_NAME, NULL,
+//                "Unknown damping type: %d\n",
+//                Param.theTypeOfDamping);
+    }
+
+    Timer_Stop( "Damping addforce" );
 }
 
 /**
@@ -4017,6 +4313,41 @@ solver_compute_force_nonlinear( mysolver_t *solver,
         Timer_Start( "Compute addforces Non-linear" );
         compute_addforce_nl( mesh, solver, deltaT2 );
         Timer_Stop( "Compute addforces Non-linear" );
+    }
+}
+
+
+/**
+ * Compute the plane waves contribution to the force.
+ */
+static void
+solver_compute_force_planewaves( mesh_t     *myMesh,
+        mysolver_t *mySolver,
+        double      theDeltaT,
+        int         step,
+        fmatrix_t (*theK1)[8], fmatrix_t (*theK2)[8] )
+{
+    if ( Param.includeIncidentPlaneWaves == YES ) {
+        Timer_Start( "Compute addforces Incident Plane Waves" );
+        compute_addforce_PlaneWaves ( myMesh, mySolver, theDeltaT, step, theK1, theK2);
+        Timer_Stop( "Compute addforces Incident Plane Waves" );
+    }
+}
+
+
+/**
+ * Compute the topography contribution to the force.
+ * \param deltaT2 Delta t^2 (i.e., squared).
+ */
+static void
+solver_compute_force_topography( mysolver_t *solver,
+                                mesh_t     *mesh,
+                                double      deltaT2 )
+{
+    if ( Param.includeTopography == YES ) {
+        Timer_Start( "Compute addforces Topography" );
+        compute_addforce_topoEffective( mesh, solver, deltaT2 );
+        Timer_Stop( "Compute addforces Topography" );
     }
 }
 
@@ -4081,6 +4412,7 @@ solver_compute_displacement( mysolver_t* solver, mesh_t* mesh )
         fvector_t        nodalForce = solver->force[nindex];
         const fvector_t* tm1Disp    = solver->tm1 + nindex;
         fvector_t*       tm2Disp    = solver->tm2 + nindex;
+        fvector_t*       tm3Disp    = solver->tm3 + nindex;
 
         /* total nodal forces */
         nodalForce.f[0] += np->mass2_minusaM[0] * tm1Disp->f[0]
@@ -4090,20 +4422,43 @@ solver_compute_displacement( mysolver_t* solver, mesh_t* mesh )
         nodalForce.f[2] += np->mass2_minusaM[2] * tm1Disp->f[2]
                          - np->mass_minusaM[2]  * tm2Disp->f[2];
 
-        /* Save tm3 for accelerations */
-        if ( Param.printStationAccelerations == YES ) {
-
-            fvector_t* tm3Disp = solver->tm3 + nindex;
-
-            tm3Disp->f[0] = tm2Disp->f[0];
-            tm3Disp->f[1] = tm2Disp->f[1];
-            tm3Disp->f[2] = tm2Disp->f[2];
+        /* overwrite tm2 */
+        /* mass sanity check */
+        if (np->mass_simple < 0) {
+            fprintf(stderr,
+                    "Negative lumped mass m=%f. Node ID=%d \n", np->mass_simple, nindex);
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
         }
 
-        /* overwrite tm2 */
-        tm2Disp->f[0] = nodalForce.f[0] / np->mass_simple;
-        tm2Disp->f[1] = nodalForce.f[1] / np->mass_simple;
-        tm2Disp->f[2] = nodalForce.f[2] / np->mass_simple;
+        /* Dorian. correct Displacement */
+         // TODO: Think of a better place for this
+        if ( np->mass_simple != 0 ) {
+
+            /* Save tm3 for accelerations */
+            if ( Param.printStationAccelerations == YES ) {
+
+                tm3Disp->f[0] = tm2Disp->f[0];
+                tm3Disp->f[1] = tm2Disp->f[1];
+                tm3Disp->f[2] = tm2Disp->f[2];
+            }
+
+            tm2Disp->f[0] = nodalForce.f[0] / np->mass_simple;
+            tm2Disp->f[1] = nodalForce.f[1] / np->mass_simple;
+            tm2Disp->f[2] = nodalForce.f[2] / np->mass_simple;
+        }
+        else {
+            tm2Disp->f[0] = 0.0;
+            tm2Disp->f[1] = 0.0;
+            tm2Disp->f[2] = 0.0;
+
+            tm3Disp->f[0] = 0.0;
+            tm3Disp->f[1] = 0.0;
+            tm3Disp->f[2] = 0.0;
+        }
+
+
+
 
     } /* for (nindex ...): all my harbored nodes */
 
@@ -4247,7 +4602,7 @@ static void solver_run()
     /* sets new starting step if loading checkpoint */
     if (Param.theUseCheckPoint == 1) {
         startingStep = checkpoint_read(Global.myID, Global.myMesh, Param.theCheckPointingDirOut,
-				       Global.theGroupSize, Global.mySolver,comm_solver);
+                       Global.theGroupSize, Global.mySolver,comm_solver);
     } else {
         startingStep = 0;
     }
@@ -4275,22 +4630,30 @@ static void solver_run()
         Timer_Start( "Solver I/O" );
         solver_write_checkpoint( step, startingStep );
         solver_update_status( step, startingStep );
-        solver_output_wavefield( step );
+        // Todo Dorian. Ask Ricardo about this file (disp.out), it gets really big at high frequencies, and it is not clear its purpose.
+        //solver_output_wavefield( step );
         solver_output_planes( Global.mySolver, Global.myID, step );
         solver_output_stations( step );
         solver_output_drm_nodes( Global.mySolver, step, Param.theTotalSteps );
-        solver_read_source_forces( step );
-        solver_read_drm_displacements( step , Param.theDeltaT ,Param.theTotalSteps );
+        solver_read_source_forces( step, Param.theDeltaT );
+        solver_read_drm_displacements_v2 ( step , Param.theDeltaT ,Param.theTotalSteps );
         Timer_Stop( "Solver I/O" );
 
         Timer_Start( "Compute Physics" );
         solver_nonlinear_state( Global.mySolver, Global.myMesh, Global.theK1, Global.theK2, step );
         solver_compute_force_source( step );
-        solver_compute_effective_drm_force( Global.mySolver, Global.myMesh,Global.theK1, Global.theK2, step, Param.theDeltaT );
+        //solver_compute_effective_drm_force( Global.mySolver, Global.myMesh,Global.theK1, Global.theK2, step, Param.theDeltaT );
+        solver_compute_effective_drm_force_v2( Global.mySolver, Global.myMesh,Global.theK1, Global.theK2, step,
+                                               Param.theDeltaT, Param.theTypeOfDamping, Param.theFreq, Param.theDeltaTSquared );
+
+
+        solver_compute_force_topography( Global.mySolver, Global.myMesh, Param.theDeltaTSquared );
         solver_compute_force_stiffness( Global.mySolver, Global.myMesh, Global.theK1, Global.theK2 );
         solver_compute_force_damping( Global.mySolver, Global.myMesh, Global.theK1, Global.theK2 );
         solver_compute_force_gravity( Global.mySolver, Global.myMesh, step );
         solver_compute_force_nonlinear( Global.mySolver, Global.myMesh, Param.theDeltaTSquared );
+        solver_compute_force_planewaves( Global.myMesh, Global.mySolver, Param.theDeltaT, step, Global.theK1, Global.theK2 );
+
         Timer_Stop( "Compute Physics" );
 
         Timer_Start( "Communication" );
@@ -4350,224 +4713,224 @@ solver_output_seq()
 
     /* Allocate a fixed size buffer space if not initiazlied */
     if (Global.myVelocityTable == NULL) {
-	Global.myVelocityTable = (fvector_t *)calloc(batchlimit, sizeof(fvector_t));
-	if (Global.myVelocityTable == NULL) {
-	    fprintf(stderr,  "Thread %d: solver_output_seq: out of memory\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    Global.myVelocityTable = (fvector_t *)calloc(batchlimit, sizeof(fvector_t));
+    if (Global.myVelocityTable == NULL) {
+        fprintf(stderr,  "Thread %d: solver_output_seq: out of memory\n",
+            Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
     }
 
     if (Global.myID == 0) {
-	int32_t procid;
+    int32_t procid;
 #ifdef DEBUG
-	first_counted = 0;
+    first_counted = 0;
 #endif
 
-	if (Param.FourDOutFp == NULL) {
-	    out_hdr_t out_hdr;
+    if (Param.FourDOutFp == NULL) {
+        out_hdr_t out_hdr;
 
-	    /* First output, create the output file */
-	    Param.FourDOutFp = fopen(Param.FourDOutFile, "w+");
-	    if (Param.FourDOutFp == NULL) {
-		fprintf(stderr, "Thread 0: solver_output_seq: ");
-		fprintf(stderr, "cannot create %s\n", Param.FourDOutFile);
-		perror("fopen");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
+        /* First output, create the output file */
+        Param.FourDOutFp = fopen(Param.FourDOutFile, "w+");
+        if (Param.FourDOutFp == NULL) {
+        fprintf(stderr, "Thread 0: solver_output_seq: ");
+        fprintf(stderr, "cannot create %s\n", Param.FourDOutFile);
+        perror("fopen");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
 
-	    /* Write the header that contains the metadata */
-	    out_hdr.domain_x = Param.theDomainX;
-	    out_hdr.domain_y = Param.theDomainY;
-	    out_hdr.domain_z = Param.theDomainZ;
-	    out_hdr.total_nodes = Global.theNTotal;
-	    out_hdr.total_elements = Global.theETotal;
-	    out_hdr.mesh_ticksize = Global.myMesh->ticksize;
-	    out_hdr.output_steps = (Param.theTotalSteps - 1) / Param.theRate + 1;
+        /* Write the header that contains the metadata */
+        out_hdr.domain_x = Param.theDomainX;
+        out_hdr.domain_y = Param.theDomainY;
+        out_hdr.domain_z = Param.theDomainZ;
+        out_hdr.total_nodes = Global.theNTotal;
+        out_hdr.total_elements = Global.theETotal;
+        out_hdr.mesh_ticksize = Global.myMesh->ticksize;
+        out_hdr.output_steps = (Param.theTotalSteps - 1) / Param.theRate + 1;
 
-	    if (fwrite(&out_hdr, sizeof(out_hdr_t), 1, Param.FourDOutFp) != 1){
-		fprintf(stderr, "Thread 0: solver_output_seq: ");
-		fprintf(stderr, "fail to write 4D-out header info\n");
-		perror("fwrite");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
-	}
+        if (fwrite(&out_hdr, sizeof(out_hdr_t), 1, Param.FourDOutFp) != 1){
+        fprintf(stderr, "Thread 0: solver_output_seq: ");
+        fprintf(stderr, "fail to write 4D-out header info\n");
+        perror("fwrite");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
+    }
 
-	/* Output my owned nodes' velocities */
-	nindex = 0;
-	while (nindex < Global.myMesh->nharbored) {
-	    fvector_t vel;
+    /* Output my owned nodes' velocities */
+    nindex = 0;
+    while (nindex < Global.myMesh->nharbored) {
+        fvector_t vel;
 
-	    if (Global.myMesh->nodeTable[nindex].ismine) {
-		vel.f[0] =
-		    (Global.mySolver->tm1[nindex].f[0]
-		     - Global.mySolver->tm2[nindex].f[0])  / Param.theDeltaT;
-		vel.f[1] =
-		    (Global.mySolver->tm1[nindex].f[1]
-		     - Global.mySolver->tm2[nindex].f[1])  / Param.theDeltaT;
-		vel.f[2] =
-		    (Global.mySolver->tm1[nindex].f[2]
-		     - Global.mySolver->tm2[nindex].f[2])  / Param.theDeltaT;
+        if (Global.myMesh->nodeTable[nindex].ismine) {
+        vel.f[0] =
+            (Global.mySolver->tm1[nindex].f[0]
+             - Global.mySolver->tm2[nindex].f[0])  / Param.theDeltaT;
+        vel.f[1] =
+            (Global.mySolver->tm1[nindex].f[1]
+             - Global.mySolver->tm2[nindex].f[1])  / Param.theDeltaT;
+        vel.f[2] =
+            (Global.mySolver->tm1[nindex].f[2]
+             - Global.mySolver->tm2[nindex].f[2])  / Param.theDeltaT;
 
 
-		if (fwrite(&vel, sizeof(fvector_t), 1, Param.FourDOutFp) != 1) {
-		    fprintf(stderr, "Thread 0: solver_output_seq: error\n");
-		    MPI_Abort(MPI_COMM_WORLD, ERROR);
-		    exit(1);
-		}
+        if (fwrite(&vel, sizeof(fvector_t), 1, Param.FourDOutFp) != 1) {
+            fprintf(stderr, "Thread 0: solver_output_seq: error\n");
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
 
-		Param.the4DOutSize += sizeof(fvector_t);
+        Param.the4DOutSize += sizeof(fvector_t);
 
 #ifdef DEBUG
-		gnid_current = Global.myMesh->nodeTable[nindex].gnid;
+        gnid_current = Global.myMesh->nodeTable[nindex].gnid;
 
-		if (first_counted) {
-		    if (gnid_prev != (gnid_current - 1)) {
-			fprintf( stderr, "PE 0: uncontinuous gnid\n"
-				 "   gnid_prev = %" INT64_FMT
-				 ", gnid_current = %" INT64_FMT "\n",
-				 gnid_prev, gnid_current);
-		    }
-		} else {
-		    first_counted = 1;
-		}
+        if (first_counted) {
+            if (gnid_prev != (gnid_current - 1)) {
+            fprintf( stderr, "PE 0: uncontinuous gnid\n"
+                 "   gnid_prev = %" INT64_FMT
+                 ", gnid_current = %" INT64_FMT "\n",
+                 gnid_prev, gnid_current);
+            }
+        } else {
+            first_counted = 1;
+        }
 
-		gnid_prev = gnid_current;
+        gnid_prev = gnid_current;
 
-		if ((vel.f[0] != 0) ||
-		    (vel.f[1] != 0) ||
-		    (vel.f[2] != 0)) {
-		    /*
-		    fprintf(stderr, "Thread 0: Node %ld	 non-zero values\n",
-			    gnid_current);
-		    */
-		}
+        if ((vel.f[0] != 0) ||
+            (vel.f[1] != 0) ||
+            (vel.f[2] != 0)) {
+            /*
+            fprintf(stderr, "Thread 0: Node %ld  non-zero values\n",
+                gnid_current);
+            */
+        }
 #endif /* DEBUG */
 
-	    }
+        }
 
-	    nindex++;
-	}
+        nindex++;
+    }
 
-	/* Receive data from other processors */
-	for (procid = 1; procid < Global.theGroupSize; procid++) {
-	    MPI_Status status;
-	    int32_t rcvbytecount;
+    /* Receive data from other processors */
+    for (procid = 1; procid < Global.theGroupSize; procid++) {
+        MPI_Status status;
+        int32_t rcvbytecount;
 
-	    /* Signal the next processor to go ahead */
-	    MPI_Send(NULL, 0, MPI_CHAR, procid, GOAHEAD_MSG, comm_solver);
+        /* Signal the next processor to go ahead */
+        MPI_Send(NULL, 0, MPI_CHAR, procid, GOAHEAD_MSG, comm_solver);
 
-	    while (1) {
-		MPI_Probe(procid, OUT4D_MSG, comm_solver, &status);
-		MPI_Get_count(&status, MPI_CHAR, &rcvbytecount);
+        while (1) {
+        MPI_Probe(procid, OUT4D_MSG, comm_solver, &status);
+        MPI_Get_count(&status, MPI_CHAR, &rcvbytecount);
 
-		/* Receive the data even if rcvbytecount == 0. Otherwise
-		   the 0-byte message would get stuck in the message queue */
-		MPI_Recv(Global.myVelocityTable, rcvbytecount, MPI_CHAR, procid,
-			 OUT4D_MSG, comm_solver, &status);
+        /* Receive the data even if rcvbytecount == 0. Otherwise
+           the 0-byte message would get stuck in the message queue */
+        MPI_Recv(Global.myVelocityTable, rcvbytecount, MPI_CHAR, procid,
+             OUT4D_MSG, comm_solver, &status);
 
-		if (rcvbytecount == 0) {
-		    /* Done */
-		    break;
-		}
+        if (rcvbytecount == 0) {
+            /* Done */
+            break;
+        }
 
-		if (fwrite(Global.myVelocityTable, rcvbytecount, 1, Param.FourDOutFp) != 1) {
-		    fprintf(stderr, "Thread 0: solver_output_seq: error\n");
-		    MPI_Abort(MPI_COMM_WORLD, ERROR);
-		    exit(1);
-		}
+        if (fwrite(Global.myVelocityTable, rcvbytecount, 1, Param.FourDOutFp) != 1) {
+            fprintf(stderr, "Thread 0: solver_output_seq: error\n");
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
 
-		Param.the4DOutSize += rcvbytecount;
+        Param.the4DOutSize += rcvbytecount;
 
-	    } /* while there is more data to be received from procid */
-	} /* for all the processors */
+        } /* while there is more data to be received from procid */
+    } /* for all the processors */
 
     } else {
-	/* Processors other than 0 needs to send data to 0 */
-	int32_t sndbytecount;
-	MPI_Status status;
+    /* Processors other than 0 needs to send data to 0 */
+    int32_t sndbytecount;
+    MPI_Status status;
 
-	/* Wait for me turn */
-	MPI_Recv(NULL, 0, MPI_CHAR, 0, GOAHEAD_MSG, comm_solver, &status);
+    /* Wait for me turn */
+    MPI_Recv(NULL, 0, MPI_CHAR, 0, GOAHEAD_MSG, comm_solver, &status);
 
 #ifdef DEBUG
-	first_counted = 0;
+    first_counted = 0;
 #endif
 
 
-	nindex = 0;
-	while (nindex < Global.myMesh->nharbored) {
-	    fvector_t *velp;
+    nindex = 0;
+    while (nindex < Global.myMesh->nharbored) {
+        fvector_t *velp;
 
-	    idx = 0;
-	    while ((idx < batchlimit) &&
-		   (nindex < Global.myMesh->nharbored)) {
+        idx = 0;
+        while ((idx < batchlimit) &&
+           (nindex < Global.myMesh->nharbored)) {
 
-		if (Global.myMesh->nodeTable[nindex].ismine) {
+        if (Global.myMesh->nodeTable[nindex].ismine) {
 
-		    velp = &Global.myVelocityTable[idx];
+            velp = &Global.myVelocityTable[idx];
 
-		    velp->f[0] =
-			(Global.mySolver->tm1[nindex].f[0]
-			 - Global.mySolver->tm2[nindex].f[0])	/ Param.theDeltaT;
-		    velp->f[1] =
-			(Global.mySolver->tm1[nindex].f[1]
-			 - Global.mySolver->tm2[nindex].f[1])	/ Param.theDeltaT;
-		    velp->f[2] =
-			(Global.mySolver->tm1[nindex].f[2]
-			 - Global.mySolver->tm2[nindex].f[2])	/ Param.theDeltaT;
+            velp->f[0] =
+            (Global.mySolver->tm1[nindex].f[0]
+             - Global.mySolver->tm2[nindex].f[0])   / Param.theDeltaT;
+            velp->f[1] =
+            (Global.mySolver->tm1[nindex].f[1]
+             - Global.mySolver->tm2[nindex].f[1])   / Param.theDeltaT;
+            velp->f[2] =
+            (Global.mySolver->tm1[nindex].f[2]
+             - Global.mySolver->tm2[nindex].f[2])   / Param.theDeltaT;
 
 
-		    idx++;
+            idx++;
 
 #ifdef DEBUG
-		    gnid_current = Global.myMesh->nodeTable[nindex].gnid;
+            gnid_current = Global.myMesh->nodeTable[nindex].gnid;
 
-		    if (first_counted) {
-			if (gnid_prev != (gnid_current - 1)) {
-			    fprintf( stderr, "PE %d uncontinuous gnid\n"
-				     "	gnid_prev = %" INT64_FMT
-				     ", gnid_current = %" INT64_FMT "\n",
-				     Global.myID, gnid_prev, gnid_current );
-			}
-		    } else {
-			first_counted = 1;
-		    }
+            if (first_counted) {
+            if (gnid_prev != (gnid_current - 1)) {
+                fprintf( stderr, "PE %d uncontinuous gnid\n"
+                     "  gnid_prev = %" INT64_FMT
+                     ", gnid_current = %" INT64_FMT "\n",
+                     Global.myID, gnid_prev, gnid_current );
+            }
+            } else {
+            first_counted = 1;
+            }
 
-		    gnid_prev = gnid_current;
+            gnid_prev = gnid_current;
 
-		    /* debug */
-		    /*
-		    if ((velp->f[0] != 0) ||
-			(velp->f[1] != 0) ||
-			(velp->f[2] != 0)) {
-			fprintf(stderr,
-				"Thread %d: there are non-zero values\n",
-				Global.myID);
-				}
-		    */
+            /* debug */
+            /*
+            if ((velp->f[0] != 0) ||
+            (velp->f[1] != 0) ||
+            (velp->f[2] != 0)) {
+            fprintf(stderr,
+                "Thread %d: there are non-zero values\n",
+                Global.myID);
+                }
+            */
 #endif /* DEBUG */
 
-		}
+        }
 
-		nindex++;
-	    }
+        nindex++;
+        }
 
-	    /* Send data to proc 0 */
+        /* Send data to proc 0 */
 
-	    if (idx > 0) {
-		/* I have some real data to send */
-		sndbytecount = idx * sizeof(fvector_t);
-		MPI_Send(Global.myVelocityTable, sndbytecount, MPI_CHAR, 0, OUT4D_MSG,
-			 comm_solver);
-	    }
-	} /* While there is data left to be sent */
+        if (idx > 0) {
+        /* I have some real data to send */
+        sndbytecount = idx * sizeof(fvector_t);
+        MPI_Send(Global.myVelocityTable, sndbytecount, MPI_CHAR, 0, OUT4D_MSG,
+             comm_solver);
+        }
+    } /* While there is data left to be sent */
 
-	/* Send an empty message to indicate the end of my transfer */
-	MPI_Send(NULL, 0, MPI_CHAR, 0, OUT4D_MSG, comm_solver);
+    /* Send an empty message to indicate the end of my transfer */
+    MPI_Send(NULL, 0, MPI_CHAR, 0, OUT4D_MSG, comm_solver);
     }
 
     return;
@@ -4584,21 +4947,21 @@ schedule_new()
 
     sched = (schedule_t *)malloc(sizeof(schedule_t));
     if (sched == NULL)
-	return NULL;
+    return NULL;
 
     sched->c_count = 0;
     sched->first_c = NULL;
     sched->messenger_c = (messenger_t **)
-	calloc(Global.theGroupSize, sizeof(messenger_t *));
+    calloc(Global.theGroupSize, sizeof(messenger_t *));
     if (sched->messenger_c == NULL)
-	return NULL;
+    return NULL;
 
     sched->s_count = 0;
     sched->first_s = NULL;
     sched->messenger_s = (messenger_t **)
-	calloc(Global.theGroupSize, sizeof(messenger_t *));
+    calloc(Global.theGroupSize, sizeof(messenger_t *));
     if (sched->messenger_s == NULL)
-	return NULL;
+    return NULL;
 
     return sched;
 }
@@ -4616,36 +4979,36 @@ schedule_allocmapping( schedule_t *sched )
 
     messenger = sched->first_c;
     while (messenger != NULL) {
-	nodecount = messenger->nodecount;
+    nodecount = messenger->nodecount;
 
-	messenger->mapping =
-	    (int32_t *)calloc(nodecount, sizeof(int32_t));
+    messenger->mapping =
+        (int32_t *)calloc(nodecount, sizeof(int32_t));
 
-	if (messenger->mapping == NULL) {
-	    fprintf(stderr, "Thread %d: schedule_allocamapping: ", Global.myID);
-	    fprintf(stderr, " out of memory\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    if (messenger->mapping == NULL) {
+        fprintf(stderr, "Thread %d: schedule_allocamapping: ", Global.myID);
+        fprintf(stderr, " out of memory\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	messenger = messenger->next;
+    messenger = messenger->next;
     }
 
     messenger = sched->first_s;
     while (messenger != NULL) {
-	nodecount = messenger->nodecount;
+    nodecount = messenger->nodecount;
 
-	messenger->mapping =
-	    (int32_t *)calloc(nodecount, sizeof(int32_t));
+    messenger->mapping =
+        (int32_t *)calloc(nodecount, sizeof(int32_t));
 
-	if (messenger->mapping == NULL) {
-	    fprintf(stderr, "Thread %d: schedule_allocamapping: ", Global.myID);
-	    fprintf(stderr, " out of memory\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    if (messenger->mapping == NULL) {
+        fprintf(stderr, "Thread %d: schedule_allocamapping: ", Global.myID);
+        fprintf(stderr, " out of memory\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
 
-	messenger = messenger->next;
+    messenger = messenger->next;
     }
 
     return;
@@ -4659,39 +5022,39 @@ static void
 schedule_allocMPIctl( schedule_t* sched )
 {
     if (sched->c_count != 0) {
-	sched->irecvreqs_c =
-	    (MPI_Request *)malloc(sizeof(MPI_Request) * sched->c_count);
-	sched->irecvstats_c =
-	    (MPI_Status *)malloc(sizeof(MPI_Status) * sched->c_count);
+    sched->irecvreqs_c =
+        (MPI_Request *)malloc(sizeof(MPI_Request) * sched->c_count);
+    sched->irecvstats_c =
+        (MPI_Status *)malloc(sizeof(MPI_Status) * sched->c_count);
 
-	if ((sched->irecvreqs_c == NULL) ||
-	    (sched->irecvstats_c == NULL)) {
-	    fprintf(stderr, "Thread %d: schedule_allocMPIctl: ", Global.myID);
-	    fprintf(stderr, "out of memory\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    if ((sched->irecvreqs_c == NULL) ||
+        (sched->irecvstats_c == NULL)) {
+        fprintf(stderr, "Thread %d: schedule_allocMPIctl: ", Global.myID);
+        fprintf(stderr, "out of memory\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
     } else {
-	sched->irecvreqs_c = NULL;
-	sched->irecvstats_c = NULL;
+    sched->irecvreqs_c = NULL;
+    sched->irecvstats_c = NULL;
     }
 
     if (sched->s_count != 0) {
-	sched->irecvreqs_s =
-	    (MPI_Request *)malloc(sizeof(MPI_Request) * sched->s_count);
-	sched->irecvstats_s =
-	    (MPI_Status *)malloc(sizeof(MPI_Status) * sched->s_count);
+    sched->irecvreqs_s =
+        (MPI_Request *)malloc(sizeof(MPI_Request) * sched->s_count);
+    sched->irecvstats_s =
+        (MPI_Status *)malloc(sizeof(MPI_Status) * sched->s_count);
 
-	if ((sched->irecvreqs_s == NULL) ||
-	    (sched->irecvstats_s == NULL)) {
-	    fprintf(stderr, "Thread %d: schedule_allocMPIctl: ", Global.myID);
-	    fprintf(stderr, "out of memory\n");
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    if ((sched->irecvreqs_s == NULL) ||
+        (sched->irecvstats_s == NULL)) {
+        fprintf(stderr, "Thread %d: schedule_allocMPIctl: ", Global.myID);
+        fprintf(stderr, "out of memory\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
     } else {
-	sched->irecvreqs_s = NULL;
-	sched->irecvstats_s = NULL;
+    sched->irecvreqs_s = NULL;
+    sched->irecvstats_s = NULL;
     }
 
     return;
@@ -4709,89 +5072,89 @@ schedule_build( mesh_t* mesh, schedule_t* dnsched, schedule_t* ansched )
     messenger_t* messenger;
 
     for (nindex = 0; nindex < mesh->nharbored; nindex++) {
-	nodep = &mesh->nodeTable[nindex];
-	int32_t owner, sharer;
+    nodep = &mesh->nodeTable[nindex];
+    int32_t owner, sharer;
 
-	if (!nodep->ismine) {
-	    /* I do not own this node. Add its owner processor to my c-list */
+    if (!nodep->ismine) {
+        /* I do not own this node. Add its owner processor to my c-list */
 
-	    owner = nodep->proc.ownerid;
+        owner = nodep->proc.ownerid;
 
-	    if (nodep->isanchored) {
-		messenger = ansched->messenger_c[owner];
-	    } else {
-		messenger = dnsched->messenger_c[owner];
-	    }
+        if (nodep->isanchored) {
+        messenger = ansched->messenger_c[owner];
+        } else {
+        messenger = dnsched->messenger_c[owner];
+        }
 
-	    if (messenger == NULL) {
-		messenger = messenger_new(owner);
-		if (messenger == NULL) {
-		    fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
-		    fprintf(stderr, "out of memory.\n");
-		    MPI_Abort(MPI_COMM_WORLD, ERROR);
-		    exit(1);
-		}
+        if (messenger == NULL) {
+        messenger = messenger_new(owner);
+        if (messenger == NULL) {
+            fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
+            fprintf(stderr, "out of memory.\n");
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
 
-		if (nodep->isanchored) {
-		    ansched->c_count++;
-		    ansched->messenger_c[owner] = messenger;
-		    messenger->next = ansched->first_c;
-		    ansched->first_c = messenger;
-		} else {
-		    dnsched->c_count++;
-		    dnsched->messenger_c[owner] = messenger;
-		    messenger->next = dnsched->first_c;
-		    dnsched->first_c = messenger;
-		}
-	    }
+        if (nodep->isanchored) {
+            ansched->c_count++;
+            ansched->messenger_c[owner] = messenger;
+            messenger->next = ansched->first_c;
+            ansched->first_c = messenger;
+        } else {
+            dnsched->c_count++;
+            dnsched->messenger_c[owner] = messenger;
+            messenger->next = dnsched->first_c;
+            dnsched->first_c = messenger;
+        }
+        }
 
-	    /* Update the number of nodecount for the messenger */
-	    messenger->nodecount++;
+        /* Update the number of nodecount for the messenger */
+        messenger->nodecount++;
 
-	} else {
-	    /* I own this node. Add any sharing processor to my s-list */
+    } else {
+        /* I own this node. Add any sharing processor to my s-list */
 
-	    int32link_t *int32link;
+        int32link_t *int32link;
 
-	    int32link = nodep->proc.share;
-	    while (int32link != NULL) {
-		sharer = int32link->id;
+        int32link = nodep->proc.share;
+        while (int32link != NULL) {
+        sharer = int32link->id;
 
-		if (nodep->isanchored) {
-		    messenger = ansched->messenger_s[sharer];
-		} else {
-		    messenger = dnsched->messenger_s[sharer];
-		}
+        if (nodep->isanchored) {
+            messenger = ansched->messenger_s[sharer];
+        } else {
+            messenger = dnsched->messenger_s[sharer];
+        }
 
-		if (messenger == NULL) {
-		    messenger = messenger_new(sharer);
-		    if (messenger == NULL) {
-			fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
-			fprintf(stderr, "out of memory.\n");
-			MPI_Abort(MPI_COMM_WORLD, ERROR);
-			exit(1);
-		    }
+        if (messenger == NULL) {
+            messenger = messenger_new(sharer);
+            if (messenger == NULL) {
+            fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
+            fprintf(stderr, "out of memory.\n");
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+            }
 
-		    if (nodep->isanchored) {
-			ansched->s_count++;
-			ansched->messenger_s[sharer] = messenger;
-			messenger->next = ansched->first_s;
-			ansched->first_s = messenger;
-		    } else {
-			dnsched->s_count++;
-			dnsched->messenger_s[sharer] = messenger;
-			messenger->next = dnsched->first_s;
-			dnsched->first_s = messenger;
-		    }
-		}
+            if (nodep->isanchored) {
+            ansched->s_count++;
+            ansched->messenger_s[sharer] = messenger;
+            messenger->next = ansched->first_s;
+            ansched->first_s = messenger;
+            } else {
+            dnsched->s_count++;
+            dnsched->messenger_s[sharer] = messenger;
+            messenger->next = dnsched->first_s;
+            dnsched->first_s = messenger;
+            }
+        }
 
-		/* Update the nodecount */
-		messenger->nodecount++;
+        /* Update the nodecount */
+        messenger->nodecount++;
 
-		/* Move to the next sharing processor */
-		int32link = int32link->next;
-	    }
-	}
+        /* Move to the next sharing processor */
+        int32link = int32link->next;
+        }
+    }
     }
 
     /* Allocate MPI controls */
@@ -4804,59 +5167,59 @@ schedule_build( mesh_t* mesh, schedule_t* dnsched, schedule_t* ansched )
 
     /* Go through the nodes again and fill out the mapping table */
     for (nindex = 0; nindex < mesh->nharbored; nindex++) {
-	nodep = &mesh->nodeTable[nindex];
-	int32_t owner, sharer;
+    nodep = &mesh->nodeTable[nindex];
+    int32_t owner, sharer;
 
-	if (!nodep->ismine) {
-	    /* I do not own this node. Add its owner processor to my c-list */
-	    owner = nodep->proc.ownerid;
+    if (!nodep->ismine) {
+        /* I do not own this node. Add its owner processor to my c-list */
+        owner = nodep->proc.ownerid;
 
-	    if (nodep->isanchored) {
-		messenger = ansched->messenger_c[owner];
-	    } else {
-		messenger = dnsched->messenger_c[owner];
-	    }
+        if (nodep->isanchored) {
+        messenger = ansched->messenger_c[owner];
+        } else {
+        messenger = dnsched->messenger_c[owner];
+        }
 
-	    if (messenger == NULL) {
-		fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
-		fprintf(stderr, "encounter NULL messenger.\n");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
+        if (messenger == NULL) {
+        fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
+        fprintf(stderr, "encounter NULL messenger.\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
 
-	    /* Fill in the mapping */
-	    messenger->mapping[messenger->nidx] = nindex;
-	    messenger->nidx++;
+        /* Fill in the mapping */
+        messenger->mapping[messenger->nidx] = nindex;
+        messenger->nidx++;
 
-	} else {
-	    /* I own this node. Add any sharing processor to my s-list */
+    } else {
+        /* I own this node. Add any sharing processor to my s-list */
 
-	    int32link_t *int32link;
+        int32link_t *int32link;
 
-	    int32link = nodep->proc.share;
-	    while (int32link != NULL) {
-		sharer = int32link->id;
+        int32link = nodep->proc.share;
+        while (int32link != NULL) {
+        sharer = int32link->id;
 
-		if (nodep->isanchored) {
-		    messenger = ansched->messenger_s[sharer];
-		} else {
-		    messenger = dnsched->messenger_s[sharer];
-		}
+        if (nodep->isanchored) {
+            messenger = ansched->messenger_s[sharer];
+        } else {
+            messenger = dnsched->messenger_s[sharer];
+        }
 
-		if (messenger == NULL) {
-		    fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
-		    fprintf(stderr, "encounter NULL messenger.\n");
-		    MPI_Abort(MPI_COMM_WORLD, ERROR);
-		    exit(1);
-		}
+        if (messenger == NULL) {
+            fprintf(stderr, "Thread %d: schedule_build: ", Global.myID);
+            fprintf(stderr, "encounter NULL messenger.\n");
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
 
-		messenger->mapping[messenger->nidx] = nindex;
-		messenger->nidx++;
+        messenger->mapping[messenger->nidx] = nindex;
+        messenger->nidx++;
 
-		/* Move to the next sharing processor */
-		int32link = int32link->next;
-	    }
-	}
+        /* Move to the next sharing processor */
+        int32link = int32link->next;
+        }
+    }
     }
 
     return ;
@@ -4875,31 +5238,31 @@ schedule_delete( schedule_t* sched )
     /* Release messengers overseeing my contributions */
     current = sched->first_c;
     while (current != NULL) {
-	next = current->next;
+    next = current->next;
 
-	messenger_delete(current);
-	current = next;
+    messenger_delete(current);
+    current = next;
     }
 
     /* Release messengers overseeing shareing with others */
     current = sched->first_s;
     while (current != NULL) {
-	next = current->next;
+    next = current->next;
 
-	messenger_delete(current);
-	current = next;
+    messenger_delete(current);
+    current = next;
     }
 
     if (sched->irecvreqs_c != NULL)
-	free(sched->irecvreqs_c);
+    free(sched->irecvreqs_c);
     if (sched->irecvstats_c != NULL)
-	free(sched->irecvstats_c);
+    free(sched->irecvstats_c);
     free(sched->messenger_c);
 
     if (sched->irecvreqs_s != NULL)
-	free(sched->irecvreqs_s);
+    free(sched->irecvreqs_s);
     if (sched->irecvstats_s != NULL)
-	free(sched->irecvstats_s);
+    free(sched->irecvstats_s);
     free(sched->messenger_s);
 
     free(sched);
@@ -4914,20 +5277,20 @@ schedule_delete( schedule_t* sched )
  */
 static void
 schedule_prepare( schedule_t* sched, int32_t c_outsize, int32_t c_insize,
-		  int32_t s_outsize, int32_t s_insize )
+          int32_t s_outsize, int32_t s_insize )
 {
     messenger_t* messenger;
 
     messenger = sched->first_c;
     while (messenger != NULL) {
-	messenger_set(messenger, c_outsize, c_insize);
-	messenger = messenger->next;
+    messenger_set(messenger, c_outsize, c_insize);
+    messenger = messenger->next;
     }
 
     messenger = sched->first_s;
     while (messenger != NULL) {
-	messenger_set(messenger, s_outsize, s_insize);
-	messenger = messenger->next;
+    messenger_set(messenger, s_outsize, s_insize);
+    messenger = messenger->next;
     }
 
     return;
@@ -4944,7 +5307,7 @@ schedule_prepare( schedule_t* sched, int32_t c_outsize, int32_t c_insize,
  */
 static void
 schedule_senddata(schedule_t *sched, void *valuetable, int32_t itemsperentry,
-		  int32_t direction, int32_t msgtag)
+          int32_t direction, int32_t msgtag)
 {
     messenger_t *send_messenger, *recv_messenger;
     int32_t irecvcount, irecvnum, bytesize;
@@ -4956,120 +5319,120 @@ schedule_senddata(schedule_t *sched, void *valuetable, int32_t itemsperentry,
 #endif /* DEBUG */
 
     if (direction == CONTRIBUTION) {
-	send_messenger = sched->first_c;
-	recv_messenger = sched->first_s;
-	irecvcount = sched->s_count;
-	irecvreqs = sched->irecvreqs_s;
-	irecvstats = sched->irecvstats_s;
+    send_messenger = sched->first_c;
+    recv_messenger = sched->first_s;
+    irecvcount = sched->s_count;
+    irecvreqs = sched->irecvreqs_s;
+    irecvstats = sched->irecvstats_s;
     } else {
-	send_messenger = sched->first_s;
-	recv_messenger = sched->first_c;
-	irecvcount = sched->c_count;
-	irecvreqs = sched->irecvreqs_c;
-	irecvstats = sched->irecvstats_c;
+    send_messenger = sched->first_s;
+    recv_messenger = sched->first_c;
+    irecvcount = sched->c_count;
+    irecvreqs = sched->irecvreqs_c;
+    irecvstats = sched->irecvstats_c;
     }
 
     /* Post receives */
     irecvnum = 0;
     while (recv_messenger != NULL) {
-	bytesize = recv_messenger->nodecount * recv_messenger->insize;
-	MPI_Irecv(recv_messenger->indata, bytesize, MPI_CHAR,
-		  recv_messenger->procid, msgtag, comm_solver,
-		  &irecvreqs[irecvnum]);
+    bytesize = recv_messenger->nodecount * recv_messenger->insize;
+    MPI_Irecv(recv_messenger->indata, bytesize, MPI_CHAR,
+          recv_messenger->procid, msgtag, comm_solver,
+          &irecvreqs[irecvnum]);
 
-	irecvnum++;
-	recv_messenger = recv_messenger->next;
+    irecvnum++;
+    recv_messenger = recv_messenger->next;
     }
 
     /* Asssemble outgoing messages */
     while (send_messenger != NULL) {
-	int32_t lnid, idx, entry;
-	solver_float *dvalue;
-	solver_float *out;
+    int32_t lnid, idx, entry;
+    solver_float *dvalue;
+    solver_float *out;
 
-	for (idx = 0; idx < send_messenger->nidx; idx++) {
+    for (idx = 0; idx < send_messenger->nidx; idx++) {
 
-	    lnid = send_messenger->mapping[idx];
+        lnid = send_messenger->mapping[idx];
 
-	    out = (solver_float *)((char *)send_messenger->outdata +
-			     send_messenger->outsize * idx);
+        out = (solver_float *)((char *)send_messenger->outdata +
+                 send_messenger->outsize * idx);
 
-	    dvalue = (solver_float *)valuetable + itemsperentry * lnid;
+        dvalue = (solver_float *)valuetable + itemsperentry * lnid;
 
-	    for (entry = 0; entry < itemsperentry; entry++)
-		*(out + entry) = *(dvalue + entry);
+        for (entry = 0; entry < itemsperentry; entry++)
+        *(out + entry) = *(dvalue + entry);
 
 #ifdef DEBUG
-	    /* For debug, carry the global node id */
-	    gnidp = (int64_t *)
-		((char *)out + itemsperentry * sizeof(solver_float));
-	    *gnidp = Global.myMesh->nodeTable[lnid].gnid;
+        /* For debug, carry the global node id */
+        gnidp = (int64_t *)
+        ((char *)out + itemsperentry * sizeof(solver_float));
+        *gnidp = Global.myMesh->nodeTable[lnid].gnid;
 #endif /* DEBUG */
-	}
+    }
 
-	send_messenger = send_messenger->next;
+    send_messenger = send_messenger->next;
     }
 
     /* Revisit messengers */
     if (direction == CONTRIBUTION) {
-	send_messenger = sched->first_c;
-	recv_messenger = sched->first_s;
+    send_messenger = sched->first_c;
+    recv_messenger = sched->first_s;
     } else {
-	send_messenger = sched->first_s;
-	recv_messenger = sched->first_c;
+    send_messenger = sched->first_s;
+    recv_messenger = sched->first_c;
     }
 
     /* Send the data */
     while (send_messenger != NULL) {
-	bytesize = send_messenger->nodecount * send_messenger->outsize;
-	MPI_Send(send_messenger->outdata, bytesize, MPI_CHAR,
-		 send_messenger->procid, msgtag, comm_solver);
-	send_messenger = send_messenger->next;
+    bytesize = send_messenger->nodecount * send_messenger->outsize;
+    MPI_Send(send_messenger->outdata, bytesize, MPI_CHAR,
+         send_messenger->procid, msgtag, comm_solver);
+    send_messenger = send_messenger->next;
     }
 
     /* Wait till I receive all the data I want */
     if (irecvcount != 0) {
-	MPI_Waitall(irecvcount, irecvreqs, irecvstats);
+    MPI_Waitall(irecvcount, irecvreqs, irecvstats);
     }
 
     while (recv_messenger != NULL) {
-	int32_t lnid, idx, entry;
-	solver_float *dvalue;
-	solver_float *in;
+    int32_t lnid, idx, entry;
+    solver_float *dvalue;
+    solver_float *in;
 
-	for (idx = 0; idx < recv_messenger->nidx; idx++) {
+    for (idx = 0; idx < recv_messenger->nidx; idx++) {
 
-	    lnid = recv_messenger->mapping[idx];
+        lnid = recv_messenger->mapping[idx];
 
-	    in = (solver_float *)((char *)recv_messenger->indata +
-			    recv_messenger->insize * idx);
+        in = (solver_float *)((char *)recv_messenger->indata +
+                recv_messenger->insize * idx);
 
-	    dvalue = (solver_float *)valuetable + itemsperentry * lnid;
+        dvalue = (solver_float *)valuetable + itemsperentry * lnid;
 
-	    for (entry = 0; entry < itemsperentry; entry++) {
-		if (direction == CONTRIBUTION) {
-		    *(dvalue + entry) += *(in + entry);
-		} else {
-		    /* SHARING, overwrite my local value */
-		    *(dvalue + entry) = *(in + entry);
-		}
-	    }
+        for (entry = 0; entry < itemsperentry; entry++) {
+        if (direction == CONTRIBUTION) {
+            *(dvalue + entry) += *(in + entry);
+        } else {
+            /* SHARING, overwrite my local value */
+            *(dvalue + entry) = *(in + entry);
+        }
+        }
 
 #ifdef DEBUG
-	    /* For debug, check the global node id */
-	    gnidp = (int64_t *)
-		((char *)in + itemsperentry * sizeof(solver_float));
+        /* For debug, check the global node id */
+        gnidp = (int64_t *)
+        ((char *)in + itemsperentry * sizeof(solver_float));
 
-	    if (*gnidp != Global.myMesh->nodeTable[lnid].gnid) {
-		fprintf(stderr, "Thread %d: solver_init: gnids do not match\n",
-			Global.myID);
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
+        if (*gnidp != Global.myMesh->nodeTable[lnid].gnid) {
+        fprintf(stderr, "Thread %d: solver_init: gnids do not match\n",
+            Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
 #endif /* DEBUG */
-	} /* for all the incoming data */
+    } /* for all the incoming data */
 
-	recv_messenger = recv_messenger->next;
+    recv_messenger = recv_messenger->next;
     }
 
 
@@ -5095,15 +5458,15 @@ messenger_print( messenger_t* msg, char type, char cs, FILE* out )
     assert( NULL != msg );
 
     ret = fprintf( out, "msg_info: %d %c %c %d %d %d %d %d\n", Global.myID, type, cs,
-		   msg->procid, msg->nodecount, msg->outsize, msg->insize,
-		   msg->nodecount * msg->outsize );
+           msg->procid, msg->nodecount, msg->outsize, msg->insize,
+           msg->nodecount * msg->outsize );
 
     if (ret > 0 || !Param.theSchedulePrintErrorCheckFlag) {
-	ret = 0;
+    ret = 0;
     } else {  /* ret <= 0 && Param.theSchedulePrintErrorCheckFlag */
-	perror( "Warning! fprintf(...) failed" );
-	fprintf(stderr, "PE id = %d, ret = %d, out = 0x%p\n", Global.myID, ret, out);
-	fflush( stderr );
+    perror( "Warning! fprintf(...) failed" );
+    fprintf(stderr, "PE id = %d, ret = %d, out = 0x%p\n", Global.myID, ret, out);
+    fflush( stderr );
     }
 
     return ret;
@@ -5118,7 +5481,7 @@ messenger_print( messenger_t* msg, char type, char cs, FILE* out )
  */
 static int
 schedule_print_messenger_list( schedule_t* sched, messenger_t* msg, int count,
-			       char type, char cs, FILE* out )
+                   char type, char cs, FILE* out )
 {
     messenger_t* m_p;
     int my_count;
@@ -5130,17 +5493,17 @@ schedule_print_messenger_list( schedule_t* sched, messenger_t* msg, int count,
 
 
     for (my_count = 0; m_p != NULL && ret >= 0; my_count++, m_p = m_p->next) {
-	ret += messenger_print( msg, type, cs, out );
+    ret += messenger_print( msg, type, cs, out );
     }
 
 
     if (ret < 0) {
-	return -1;
+    return -1;
     }
 
     if (my_count != count) {
-	fprintf( stderr, "Warning! schedule list count does not match: "
-		 "%u %c %c %d %d\n", Global.myID, type, cs, count, my_count );
+    fprintf( stderr, "Warning! schedule list count does not match: "
+         "%u %c %c %d %d\n", Global.myID, type, cs, count, my_count );
     }
 
     return ret;
@@ -5162,9 +5525,9 @@ schedule_print_detail( schedule_t* sched, char type, FILE* out )
     int ret = 0;
 
     ret += schedule_print_messenger_list( sched, sched->first_c,
-					  sched->c_count, type, 'c', out );
+                      sched->c_count, type, 'c', out );
     ret += schedule_print_messenger_list( sched, sched->first_s,
-					  sched->s_count, type, 's', out );
+                      sched->s_count, type, 's', out );
 
     return ret;
 }
@@ -5191,11 +5554,11 @@ schedule_print( schedule_t* sched, char type, FILE* out )
     assert( NULL != out );
 
     ret = fprintf( out, "sch_info: %u %c %d %d\n", Global.myID, type, sched->c_count,
-		   sched->s_count );
+           sched->s_count );
 
 
     if (ret > 0 || !Param.theSchedulePrintErrorCheckFlag) {
-	ret = 0;
+    ret = 0;
     }
 
     return ret;
@@ -5218,9 +5581,9 @@ solver_print_schedules_imp( mysolver_t* solver, FILE* out )
 
     /* print the high-level schedule per PE */
     if (Global.myID == 0) { /* print some header information */
-	fputs( "# ----------------------------------------------------------\n"
-	       "# Content: Solver schedule information\n"
-	       "# pe_id d/a s_count c_count\n", out );
+    fputs( "# ----------------------------------------------------------\n"
+           "# Content: Solver schedule information\n"
+           "# pe_id d/a s_count c_count\n", out );
     }
     fflush( out );
     fdatasync( fileno( out ) );
@@ -5237,12 +5600,12 @@ solver_print_schedules_imp( mysolver_t* solver, FILE* out )
 
     /* print the schedule detail */
     if (Global.myID == 0) { /* print some header information */
-	fputs( "\n\n"
-	       "# ----------------------------------------------------------\n"
-	       "# Content: Solver schedule detail\n"
-	       "# pe_id d/a c/s rpe nodecount outsize insize msgsize\n", out );
-	fflush( out );
-	fdatasync( fileno( out ) );
+    fputs( "\n\n"
+           "# ----------------------------------------------------------\n"
+           "# Content: Solver schedule detail\n"
+           "# pe_id d/a c/s rpe nodecount outsize insize msgsize\n", out );
+    fflush( out );
+    fdatasync( fileno( out ) );
     }
 
     MPI_Barrier( comm_solver );
@@ -5256,10 +5619,10 @@ solver_print_schedules_imp( mysolver_t* solver, FILE* out )
     MPI_Barrier( comm_solver );
 
     if (Global.myID == 0) {
-	fputs( "# ----------------------------------------------------------\n"
-	       "\n", out );
-	fflush( out );
-	fdatasync( fileno( out ) );
+    fputs( "# ----------------------------------------------------------\n"
+           "\n", out );
+    fflush( out );
+    fdatasync( fileno( out ) );
     }
 
     MPI_Barrier( comm_solver );
@@ -5282,33 +5645,33 @@ solver_print_schedules( mysolver_t* solver )
     int ret = 0;
 
     if (Param.theSchedulePrintToStdout) {
-	/* print schedules to standard output */
-	ret += solver_print_schedules_imp( solver, stdout );
+    /* print schedules to standard output */
+    ret += solver_print_schedules_imp( solver, stdout );
 
-	if (ret < 0) {
-	    fprintf( stderr, "Warning! printing schedules to standard output "
-		     "failed for PE %d\n", Global.myID );
-	}
+    if (ret < 0) {
+        fprintf( stderr, "Warning! printing schedules to standard output "
+             "failed for PE %d\n", Global.myID );
+    }
     }
 
     if (Param.theSchedulePrintToFile && (Param.theSchedulePrintFilename != NULL)) {
-	/* print schedules to the given file */
-	out = fopen( Param.theSchedulePrintFilename, "a" );
+    /* print schedules to the given file */
+    out = fopen( Param.theSchedulePrintFilename, "a" );
 
-	if (NULL == out) { /* this is not fatal */
-	    fprintf( stderr, "Warning!, PE# %d failed to open output file for "
-		     "printing the communication schedule\n", Global.myID );
-	    return -1;
-	}
+    if (NULL == out) { /* this is not fatal */
+        fprintf( stderr, "Warning!, PE# %d failed to open output file for "
+             "printing the communication schedule\n", Global.myID );
+        return -1;
+    }
 
-	ret = solver_print_schedules_imp( solver, out );
+    ret = solver_print_schedules_imp( solver, out );
 
-	if (ret < 0) {
-	    fprintf( stderr, "Warning! PE %d could not print schedules "
-		     "to file\n", Global.myID );
-	}
+    if (ret < 0) {
+        fprintf( stderr, "Warning! PE %d could not print schedules "
+             "to file\n", Global.myID );
+    }
 
-	fclose( out );
+    fclose( out );
     }
 
     return ret;
@@ -5325,7 +5688,7 @@ static messenger_t *messenger_new(int32_t procid)
     messenger = (messenger_t *)calloc(1, sizeof(messenger_t));
 
     if (messenger == NULL)
-	return NULL;
+    return NULL;
 
     messenger->procid = procid;
 
@@ -5341,13 +5704,13 @@ static messenger_t *messenger_new(int32_t procid)
 static void messenger_delete(messenger_t *messenger)
 {
     if (messenger == NULL)
-	return;
+    return;
 
     if (messenger->outdata != NULL)
-	free(messenger->outdata);
+    free(messenger->outdata);
 
     if (messenger->indata != NULL)
-	free(messenger->indata);
+    free(messenger->indata);
 
     free(messenger->mapping);
 
@@ -5368,36 +5731,36 @@ static void
 messenger_set(messenger_t *messenger, int32_t outsize, int32_t insize)
 {
     if (messenger->outdata != NULL) {
-	free(messenger->outdata);
-	messenger->outdata = NULL;
+    free(messenger->outdata);
+    messenger->outdata = NULL;
     }
 
     if (messenger->indata != NULL) {
-	free(messenger->indata);
-	messenger->indata = NULL;
+    free(messenger->indata);
+    messenger->indata = NULL;
     }
 
     messenger->outsize = outsize;
     messenger->insize = insize;
 
     if (outsize != 0) {
-	messenger->outdata = calloc(messenger->nodecount, outsize);
-	if (messenger->outdata == NULL) {
-	    fprintf(stderr, "Thread %d: messenger_set: out of memory\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    messenger->outdata = calloc(messenger->nodecount, outsize);
+    if (messenger->outdata == NULL) {
+        fprintf(stderr, "Thread %d: messenger_set: out of memory\n",
+            Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
     }
 
     if (insize != 0) {
-	messenger->indata = calloc(messenger->nodecount, insize);
-	if (messenger->indata == NULL) {
-	    fprintf(stderr, "Thread %d: messenger_set: out of memory\n",
-		    Global.myID);
-	    MPI_Abort(MPI_COMM_WORLD, ERROR);
-	    exit(1);
-	}
+    messenger->indata = calloc(messenger->nodecount, insize);
+    if (messenger->indata == NULL) {
+        fprintf(stderr, "Thread %d: messenger_set: out of memory\n",
+            Global.myID);
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+    }
     }
 
     return;
@@ -5419,8 +5782,8 @@ messenger_countnodes(messenger_t *first)
     total = 0;
     messenger = first;
     while (messenger != NULL) {
-	total += messenger->nodecount;
-	messenger = messenger->next;
+    total += messenger->nodecount;
+    messenger = messenger->next;
     }
 
     return total;
@@ -5449,89 +5812,89 @@ static void compute_K()
     int k, l; /* indices of 3 x 3 matrices, k for rows, l for columns     */
 
     double x[3][8]={ {-1,  1, -1,  1, -1,  1, -1, 1} ,
-		     {-1, -1,  1,  1, -1, -1,  1, 1} ,
-		     {-1, -1, -1, -1,  1,  1,  1, 1} };
+             {-1, -1,  1,  1, -1, -1,  1, 1} ,
+             {-1, -1, -1, -1,  1,  1,  1, 1} };
 
     /* compute K3 first */
     memset(Global.theK3, 0, 8 * 8 * sizeof(fmatrix_t));
     for (i = 0 ;  i < 8; i++) {
-	for (j = 0; j <8; j++){
-	    /* for  each 3 x 3 matrix representing (node i, node j),
+    for (j = 0; j <8; j++){
+        /* for  each 3 x 3 matrix representing (node i, node j),
                each of these matrices is diagonal, off-diagonal elements
                have been set to 0 in memset() */
 
-	    fmatrix_t *matPtr;
-	    matPtr = &Global.theK3[i][j];
+        fmatrix_t *matPtr;
+        matPtr = &Global.theK3[i][j];
 
-	    for (k = 0; k < 3; k++) {
-		/* set the diagonal values for the 3 x 3 matrix.
-		   Note the rotation of the index */
-		double I1, I2, I3;
+        for (k = 0; k < 3; k++) {
+        /* set the diagonal values for the 3 x 3 matrix.
+           Note the rotation of the index */
+        double I1, I2, I3;
 
-		I1 = INTEGRAL_1
-		    (x[(k + 0) % 3][i], x[(k + 0) % 3][j],
-		     x[(k + 1) % 3][i], x[(k + 1) % 3][j],
-		     x[(k + 2) % 3][i], x[(k + 2) % 3][j]);
+        I1 = INTEGRAL_1
+            (x[(k + 0) % 3][i], x[(k + 0) % 3][j],
+             x[(k + 1) % 3][i], x[(k + 1) % 3][j],
+             x[(k + 2) % 3][i], x[(k + 2) % 3][j]);
 
-		I2 = INTEGRAL_1
-		    (x[(k + 1) % 3][i], x[(k + 1) % 3][j],
-		     x[(k + 2) % 3][i], x[(k + 2) % 3][j],
-		     x[(k + 0) % 3][i], x[(k + 0) % 3][j]);
+        I2 = INTEGRAL_1
+            (x[(k + 1) % 3][i], x[(k + 1) % 3][j],
+             x[(k + 2) % 3][i], x[(k + 2) % 3][j],
+             x[(k + 0) % 3][i], x[(k + 0) % 3][j]);
 
 
-		I3 = INTEGRAL_1
-		    (x[(k + 2) % 3][i], x[(k + 2) % 3][j],
-		     x[(k + 0) % 3][i], x[(k + 0) % 3][j],
-		     x[(k + 1) % 3][i], x[(k + 1) % 3][j]);
+        I3 = INTEGRAL_1
+            (x[(k + 2) % 3][i], x[(k + 2) % 3][j],
+             x[(k + 0) % 3][i], x[(k + 0) % 3][j],
+             x[(k + 1) % 3][i], x[(k + 1) % 3][j]);
 
-		matPtr->f[k][k] = I1 + I2 + I3;
-	    } /* k*/
-	} /* j*/
+        matPtr->f[k][k] = I1 + I2 + I3;
+        } /* k*/
+    } /* j*/
     } /* i */
 
     /* compute K1 and K2. They are not diagonal either, but they are
        indeed symmetric globablly */
     for (i = 0; i < 8; i++) {
-	for (j = 0; j < 8; j++) {
-	    /* for  each 3 x 3 matrix representing (node i, node j)*/
+    for (j = 0; j < 8; j++) {
+        /* for  each 3 x 3 matrix representing (node i, node j)*/
 
-	    fmatrix_t *matPtr0, *matPtr1;
-	    matPtr0 = &Global.theK1[i][j];
-	    matPtr1 = &Global.theK2[i][j];
+        fmatrix_t *matPtr0, *matPtr1;
+        matPtr0 = &Global.theK1[i][j];
+        matPtr1 = &Global.theK2[i][j];
 
-	    for (k = 0; k <  3; k++)
-		for (l = 0; l < 3; l++) {
-		    if (k == l) {
-			/* Initialize the diagnoal elements */
-			matPtr0->f[k][k] =
-			    INTEGRAL_1
-			    (x[(k + 0) % 3][i], x[(k + 0) % 3][j],
-			     x[(k + 1) % 3][i], x[(k + 1) % 3][j],
-			     x[(k + 2) % 3][i], x[(k + 2) % 3][j]);
+        for (k = 0; k <  3; k++)
+        for (l = 0; l < 3; l++) {
+            if (k == l) {
+            /* Initialize the diagnoal elements */
+            matPtr0->f[k][k] =
+                INTEGRAL_1
+                (x[(k + 0) % 3][i], x[(k + 0) % 3][j],
+                 x[(k + 1) % 3][i], x[(k + 1) % 3][j],
+                 x[(k + 2) % 3][i], x[(k + 2) % 3][j]);
 
 
-			matPtr1->f[k][k] =
-			    INTEGRAL_1
-			    (x[(k + 0) % 3][j], x[(k + 0) % 3][i],
-			     x[(k + 1) % 3][j], x[(k + 1) % 3][i],
-			     x[(k + 2) % 3][j], x[(k + 2) % 3][i]);
+            matPtr1->f[k][k] =
+                INTEGRAL_1
+                (x[(k + 0) % 3][j], x[(k + 0) % 3][i],
+                 x[(k + 1) % 3][j], x[(k + 1) % 3][i],
+                 x[(k + 2) % 3][j], x[(k + 2) % 3][i]);
 
-		    } else {
-			/* Initialize off-diagonal elements */
+            } else {
+            /* Initialize off-diagonal elements */
 
-			matPtr0->f[k][l] =
-			    INTEGRAL_2
-			    (x[k][j], x[l][i],
-			     x[3 - (k + l)][j], x[3 - (k + l)][i]);
+            matPtr0->f[k][l] =
+                INTEGRAL_2
+                (x[k][j], x[l][i],
+                 x[3 - (k + l)][j], x[3 - (k + l)][i]);
 
-			matPtr1->f[k][l] =
-			    INTEGRAL_2
-			    (x[k][i], x[l][j],
-			     x[3 - (k + l)][i], x[3 - (k + l)][j]);
+            matPtr1->f[k][l] =
+                INTEGRAL_2
+                (x[k][i], x[l][j],
+                 x[3 - (k + l)][i], x[3 - (k + l)][j]);
 
-		    } /* else */
-		} /* for l */
-	} /* for j */
+            } /* else */
+        } /* for l */
+    } /* for j */
     } /* i */
 
     /* Old code for damping                                    */
@@ -5557,62 +5920,91 @@ static void compute_K()
      */
     for ( i = 0; i < 8; i++ )
     {
-	for ( j = 0; j < 8; j++ )
-	{
-	    for ( k = 0; k < 3; k++ )
-	    {
-		for ( l = 0; l < 3; l++ )
-		{
-		    Global.theK1[i][j].f[k][l] += Global.theK3[i][j].f[k][l];
-		}
-	    }
-	}
+    for ( j = 0; j < 8; j++ )
+    {
+        for ( k = 0; k < 3; k++ )
+        {
+        for ( l = 0; l < 3; l++ )
+        {
+            Global.theK1[i][j].f[k][l] += Global.theK3[i][j].f[k][l];
+        }
+        }
+    }
     }
 
     return;
 }
 
-static void constract_Quality_Factor_Table()
-{
-int i,j;
-double local_QTABLE[26][6] = {{ 5.,	0.211111102, 0.236842104, 0.032142857, 0.271428571,	0.14},
-		{6.25,	0.188888889,	0.184210526,	0.039893617,	0.336879433,	0.10152},
-		{8.33,	0.157777778,	0.139473684,	0.045,	0.38,	0.07},
-		{10., 0.137777765, 0.12105263, 0.032942899, 0.27818448, 0.0683},
-		{15., 0.097777765,	0.08105263,	0.032942899,	0.27818448,	0.045},
-		{20., 0.078139527, 0.060526314,	0.031409788, 0.277574872, 0.034225},
-		{25., 0.064285708, 0.049999999,	0.031578947, 0.285714286, 0.0266},
-		{30.,	0.053658537,	0.044736842,	0.026640676,	0.24691358,	0.023085},
-		{35.,	0.046341463,	0.038157895,	0.02709848,	0.251156642,	0.019669},
-		{40.,	0.040487805,	0.034210526,	0.025949367,	0.240506329,	0.01738},
-		{45.,	0.036585366,	0.028947368,	0.031393568,	0.290964778,	0.014366},
-		{50.,	0.032926829,	0.026315789,	0.032488114,	0.30110935,	0.01262},
-		{60.,     0.0279,    0.0223,    0.0275,    0.2545,    0.0114},
-		{70.,   0.024,			0.019,			0.032488114,    0.30110935, 0.0083},
-		{80.,  0.0207,    0.0174,    0.0251,    0.2326,    0.0088},
-		{90.,    0.0187,    0.0154,    0.0244,    0.2256,    0.0079},
-		{100.,	0.017,	0.014,	0.028021016,	0.288966725,	0.006281},
-		{120.,     0.0142,    0.0115,    0.0280,   0.2700,    0.0052},
-		{150.,  0.0114,    0.0094,    0.0240,    0.2316,    0.0047},
-		{200.,	0.0085,	0.00705,	0.022603978,	0.226039783,	0.0035392},
-		{250., 0.0069,    0.0055,    0.0269,    0.2596,    0.0027},
-		{300.,	0.0057,	0.0047,	0.027072758,	0.279187817,	0.0021276},
-		{350,  0.0048,    0.0040,    0.0242,    0.2339,    0.0020},
-		{400.,	0.0043,	0.0036,	0.021425572,	0.214255718,	0.0017935},
-		{450., 0.0039,    0.0030,   0.0280,    0.2710,    0.0015},
-		{500.,	0.0035,	0.00285,	0.023408925,	0.241404535,	0.001367}
-};
+static void constract_Quality_Factor_Table() {
 
-for(i = 0; i < 18; i++)
-{
-	for(j = 0; j < 6; j++)
-	{
-		Global.theQTABLE[i][j] = local_QTABLE[i][j];
-//		printf("%f ",theQTABLE[i][j]);
-	}
-//	printf("\n");
-}
-return;
+    int i, j;
+    /* double local_QTABLE[26][6] = {
+            {   5.00,  0.211111102,  0.236842104,  0.032142857,  0.271428571,  0.1400000 },
+            {   6.25,  0.188888889,  0.184210526,  0.039893617,  0.336879433,  0.1015200 },
+            {   8.33,  0.157777778,  0.139473684,  0.045000000,  0.380000000,  0.0700000 },
+            {  10.00,  0.137777765,  0.121052630,  0.032942899,  0.278184480,  0.0683000 },
+            {  15.00,  0.097777765,  0.081052630,  0.032942899,  0.278184480,  0.0450000 },
+            {  20.00,  0.078139527,  0.060526314,  0.031409788,  0.277574872,  0.0342250 },
+            {  25.00,  0.064285708,  0.049999999,  0.031578947,  0.285714286,  0.0266000 },
+            {  30.00,  0.053658537,  0.044736842,  0.026640676,  0.246913580,  0.0230850 },
+            {  35.00,  0.046341463,  0.038157895,  0.027098480,  0.251156642,  0.0196690 },
+            {  40.00,  0.040487805,  0.034210526,  0.025949367,  0.240506329,  0.0173800 },
+            {  45.00,  0.036585366,  0.028947368,  0.031393568,  0.290964778,  0.0143660 },
+            {  50.00,  0.032926829,  0.026315789,  0.032488114,  0.301109350,  0.0126200 },
+            {  60.00,  0.027900000,  0.022300000,  0.027500000,  0.254500000,  0.0114000 },
+            {  70.00,  0.024000000,  0.019000000,  0.032488114,  0.301109350,  0.0083000 },
+            {  80.00,  0.020700000,  0.017400000,  0.025100000,  0.232600000,  0.0088000 },
+            {  90.00,  0.018700000,  0.015400000,  0.024400000,  0.225600000,  0.0079000 },
+            { 100.00,  0.017000000,  0.014000000,  0.028021016,  0.288966725,  0.0062810 },
+            { 120.00,  0.014200000,  0.011500000,  0.028000000,  0.270000000,  0.0052000 },
+            { 150.00,  0.011400000,  0.009400000,  0.024000000,  0.231600000,  0.0047000 },
+            { 200.00,  0.008500000,  0.007050000,  0.022603978,  0.226039783,  0.0035392 },
+            { 250.00,  0.006900000,  0.005500000,  0.026900000,  0.259600000,  0.0027000 },
+            { 300.00,  0.005700000,  0.004700000,  0.027072758,  0.279187817,  0.0021276 },
+            { 350.00,  0.004800000,  0.004000000,  0.024200000,  0.233900000,  0.0020000 },
+            { 400.00,  0.004300000,  0.003600000,  0.021425572,  0.214255718,  0.0017935 },
+            { 450.00,  0.003900000,  0.003000000,  0.028000000,  0.271000000,  0.0015000 },
+            { 500.00,  0.003500000,  0.002850000,  0.023408925,  0.241404535,  0.0013670 }
+            //    Qo,      alpha_1,      alpha_2,      gamma_1,      gamma_2,       beta
+    }; */
+     // Doriam's table
+      double local_QTABLE[26][6] = {
+           { 5.0,     0.213824199306997,   0.214975081555006,   0.051565915820727,   0.392419601076068,   0.114223560617828 },
+           { 6.25,    0.186829389245902,   0.176495993330104,   0.050021147523697,   0.383250861967562,   0.091379110600293 },
+           { 8.33,    0.153250864931585,   0.135813992388522,   0.048477940850105,   0.374166449435453,   0.068561729073257 },
+           { 10.00,   0.133541701119348,   0.114543936056555,   0.047705132221359,   0.369647375406900,   0.057111817639174 },
+           { 15.00,   0.095975244603152,   0.077914986423977,   0.046428268749996,   0.362223775996977,   0.038074338344773 },
+           { 20.00,   0.074734684302201,   0.059014449564976,   0.045797618339140,   0.358572526832180,   0.028555662894623 },
+           { 25.00,   0.061146200167406,   0.047488939930242,   0.045423352297652,   0.356407244204920,   0.022844499869013 },
+           { 30.00,   0.051722724340693,   0.039728560381090,   0.045175923644991,   0.354975080940478,   0.019037079640288 },
+           { 35.00,   0.044809339288316,   0.034147885877092,   0.045000204762312,   0.353957211053003,   0.016317504582817 },
+           { 40.00,   0.039523175150440,   0.029941793660133,   0.044868873696694,   0.353195975615256,   0.014277828479929 },
+           { 45.00,   0.035351165343402,   0.026658136972439,   0.044766892469425,   0.352604653279352,   0.012691416011863 },
+           { 50.00,   0.031975096967461,   0.024023455052625,   0.044685320595041,   0.352131663633679,   0.011422286797518 },
+           { 60.00,   0.026846337747289,   0.020058425934387,   0.044562752020458,   0.351421365568300,   0.009518592500906 },
+           { 70.00,   0.023134990683038,   0.017216647306878,   0.044474817264180,   0.350912593773531,   0.008158808695107 },
+           { 80.00,   0.020324985209151,   0.015080030053759,   0.044408507155927,   0.350529798411748,   0.007138968333117 },
+           { 90.00,   0.018123577678620,   0.013415083146655,   0.044356656285723,   0.350231225564975,   0.006345756901192 },
+           { 100.00,  0.016352382860205,   0.012081157194701,   0.044314985694202,   0.349991873360687,   0.005711185876928 },
+           { 120.00,  0.013678649106408,   0.010077015436344,   0.044252210323555,   0.349632434464568,   0.004759325395322 },
+           { 150.00,  0.010984355197906,   0.008069044748514,   0.044189407612328,   0.349274010595048,   0.003807459231929 },
+           { 200.00,  0.008269251319794,   0.006057391664144,   0.044127549161943,   0.348920585136250,   0.002855587254772 },
+           { 250.00,  0.006630158272276,   0.004848705344604,   0.044091695658935,   0.348713672248562,   0.002284462652439 },
+           { 300.00,  0.005533298472639,   0.004042204370751,   0.044068463407196,   0.348577928429087,   0.001903713971116 },
+           { 350.00,  0.004747858760699,   0.003465747986440,   0.044051784382370,   0.348480186531356,   0.001631752444839 },
+           { 400.00,  0.004157744966802,   0.003033152859528,   0.044038500649086,   0.348403654469221,   0.001427783254767 },
+           { 450.00,  0.003698184940471,   0.002696500100933,   0.044026822537802,   0.348339033919198,   0.001269142412984 },
+           { 500.00,  0.003330190674661,   0.002427023350810,   0.044015678669530,   0.348280855263629,   0.001142231431869 }
+    };
+            //    Qo,      alpha_1,      alpha_2,      gamma_1,      gamma_2,       beta
+
+    for(i = 0; i < 26; i++) {
+        for(j = 0; j < 6; j++) {
+            Global.theQTABLE[i][j] = local_QTABLE[i][j];
+        }
+    }
+
+    return;
 }
 
 
@@ -5634,81 +6026,81 @@ compute_setflag(tick_t ldb[3], tick_t ruf[3], tick_t p1[3], tick_t p2[3])
     flag = 13; /* indicate internal element */
 
     if (ldb[0] == p1[0])
-	flag = 12;
+    flag = 12;
     if (ldb[1] == p1[1])
-	flag = 10;
+    flag = 10;
     if (ldb[2] == p1[2])
-	flag = 4;
+    flag = 4;
 
     if (ruf[0] == p2[0])
-	flag = 14;
+    flag = 14;
     if (ruf[1] == p2[1])
-	flag = 16;
+    flag = 16;
     if (ruf[2] == p2[2])
-	flag = 22;
+    flag = 22;
 
 
     if(ldb[0] == p1[0] && ldb[1] == p1[1])
-	flag = 9;
+    flag = 9;
 
     if(ruf[0] == p2[0] && ldb[1] == p1[1])
-	flag = 11;
+    flag = 11;
 
     if(ldb[0] == p1[0] && ruf[1] == p2[1])
-	flag = 15;
+    flag = 15;
 
     if(ruf[0] == p2[0] &&   ruf[1] == p2[1])
-	flag = 17;
+    flag = 17;
 
 
     if (ldb[0] == p1[0] && ldb[2] == p1[2])
-	flag = 3;
+    flag = 3;
 
     if (ruf[0] == p2[0] && ldb[2] == p1[2])
-	flag = 5;
+    flag = 5;
 
     if (ldb[0] == p1[0] && ruf[2] == p2[2])
-	flag = 21;
+    flag = 21;
 
     if (ruf[0] == p2[0] && ruf[2] == p2[2])
-	flag = 23;
+    flag = 23;
 
 
     if (ldb[1] == p1[1] && ldb[2] == p1[2])
-	flag = 1;
+    flag = 1;
 
     if (ruf[1] == p2[1] && ldb[2] == p1[2])
-	flag = 7;
+    flag = 7;
 
     if (ldb[1] == p1[1] && ruf[2] == p2[2])
-	flag = 19;
+    flag = 19;
 
     if (ruf[1] == p2[1] && ruf[2] == p2[2])
-	flag = 25;
+    flag = 25;
 
     if (ldb[0] == p1[0] && ldb[1] == p1[1] && ldb[2] == p1[2])
-	flag = 0;
+    flag = 0;
 
     if (ruf[0] == p2[0] && (ldb[1] == p1[1]) && ldb[2] == p1[2])
-	flag = 2;
+    flag = 2;
 
     if (ldb[0] == p1[0] && ruf[1] == p2[1] && ldb[2] == p1[2])
-	flag = 6;
+    flag = 6;
 
     if (ruf[0] == p2[0] && ruf[1] == p2[1] && ldb[2] == p1[2])
-	flag = 8;
+    flag = 8;
 
     if (ldb[0] == p1[0] && ldb[1] == p1[1] && ruf[2] == p2[2])
-	flag = 18;
+    flag = 18;
 
     if (ruf[0] == p2[0] && ldb[1] == p1[1] && ruf[2] == p2[2])
-	flag = 20;
+    flag = 20;
 
     if (ldb[0] == p1[0] && ruf[1] == p2[1] && ruf[2] == p2[2])
-	flag = 24;
+    flag = 24;
 
     if (ruf[0] == p2[0] && ruf[1] == p2[1] && ruf[2] == p2[2])
-	flag = 26;
+    flag = 26;
 
     return flag;
 }
@@ -5751,7 +6143,7 @@ static const int theIDBoundaryMatrix[27][8] = {
 
 static void
 compute_setboundary(float size, float Vp, float Vs, float rho, int flag,
-		    double dashpot[8][3])
+            double dashpot[8][3])
 {
     int whichNode;
     double scale;
@@ -5766,38 +6158,38 @@ compute_setboundary(float size, float Vp, float Vs, float rho, int flag,
     scale = rho * (size / 2) * (size / 2);
 
     for (whichNode = 0 ; whichNode < 8; whichNode++) {
-	int bitmark, component;
+    int bitmark, component;
 
-	bitmark = theIDBoundaryMatrix[flag][whichNode];
+    bitmark = theIDBoundaryMatrix[flag][whichNode];
 
-	switch (bitmark) {
-	case 0:
-	    break;
-	case 7:
-	    /* Three contributing faces */
-	    dashpot[whichNode][0] = dashpot[whichNode][1]
-		= dashpot[whichNode][2] = (Vp + 2 * Vs) * scale;
-	    break;
-	case 3:
-	case 5:
-	case 6:
-	    /* Two contributing faces */
-	    for (component = 0; component < 3; component++)
-		dashpot[whichNode][component] =
-		    (Vs + ((bitmark & (1<< component)) ? Vp : Vs)) * scale;
-	    break;
-	case 1:
-	case 2:
-	case 4:
-	    /* One contributing face */
-	    for (component = 0; component < 3; component++)
-		dashpot[whichNode][component] =
-		    ((bitmark & (1<<component)) ? Vp : Vs) * scale;
-	    break;
-	default:
-	    fprintf(stderr, "SetBoundary: Unknown bitmark. Panic!\n");
-	    exit(1);
-	}
+    switch (bitmark) {
+    case 0:
+        break;
+    case 7:
+        /* Three contributing faces */
+        dashpot[whichNode][0] = dashpot[whichNode][1]
+        = dashpot[whichNode][2] = (Vp + 2 * Vs) * scale;
+        break;
+    case 3:
+    case 5:
+    case 6:
+        /* Two contributing faces */
+        for (component = 0; component < 3; component++)
+        dashpot[whichNode][component] =
+            (Vs + ((bitmark & (1<< component)) ? Vp : Vs)) * scale;
+        break;
+    case 1:
+    case 2:
+    case 4:
+        /* One contributing face */
+        for (component = 0; component < 3; component++)
+        dashpot[whichNode][component] =
+            ((bitmark & (1<<component)) ? Vp : Vs) * scale;
+        break;
+    default:
+        fprintf(stderr, "SetBoundary: Unknown bitmark. Panic!\n");
+        exit(1);
+    }
     }
 
     return;
@@ -5820,56 +6212,59 @@ static void compute_setab(double freq, double *aBasePtr, double *bBasePtr)
 
     if (Param.theTypeOfDamping == RAYLEIGH)
     {
-	/* the factors 0.2 and 1 were calibrated heuristically by LEO */
-	w1 = 2 * PI * freq *.2;
-	w2 = 2 * PI * freq * 1;
 
-	/* logs */
-	lw1 = log(w1);
-	lw2 = log(w2);
+    /* the factors 0.2 and 1 were calibrated heuristically by LEO */
+    w1 = 2 * PI * freq *.2;
+    w2 = 2 * PI * freq * 1;
 
-	/* squares */
-	sw1 = w1 * w1;
-	sw2 = w2 * w2;
+    /* logs */
+    lw1 = log(w1);
+    lw2 = log(w2);
 
-	/* cubes */
-	cw1 = w1 * w1 * w1;
-	cw2 = w2 * w2 * w2;
+    /* squares */
+    sw1 = w1 * w1;
+    sw2 = w2 * w2;
 
-	/* numerator */
-	numer = w1 * w2 *
-	    ( -2 * sw1 * lw2 + 2 * sw1 * lw1 - 2 * w1 * w2 * lw2
-	      + 2 * w1 * w2 * lw1 + 3 * sw2 - 3 * sw1
-		  - 2 * sw2 * lw2 + 2 * sw2 * lw1);
+    /* cubes */
+    cw1 = w1 * w1 * w1;
+    cw2 = w2 * w2 * w2;
 
-	/* denominator */
-	denom = (cw1 - cw2 + 3 * sw2 * w1 - 3 * sw1 * w2);
+    /* numerator */
+    numer = w1 * w2 *
+        ( -2 * sw1 * lw2 + 2 * sw1 * lw1 - 2 * w1 * w2 * lw2
+          + 2 * w1 * w2 * lw1 + 3 * sw2 - 3 * sw1
+          - 2 * sw2 * lw2 + 2 * sw2 * lw1);
 
-	/* the a over zeta target is... */
-	*aBasePtr = numer / denom;
+    /* denominator */
+    denom = (cw1 - cw2 + 3 * sw2 * w1 - 3 * sw1 * w2);
 
-	/* new numerator */
-	numer = 3 * (2 * w1 * w2 * lw2 - 2 * w1 * w2 * lw1 + sw1 - sw2);
+    /* the a over zeta target is... */
+    *aBasePtr = numer / denom;
 
-	/* the b over zeta target is... */
-	*bBasePtr = numer / denom;
+    /* new numerator */
+    numer = 3 * (2 * w1 * w2 * lw2 - 2 * w1 * w2 * lw1 + sw1 - sw2);
+
+    /* the b over zeta target is... */
+    *bBasePtr = numer / denom;
 
     }
     else if ( Param.theTypeOfDamping == MASS )
     {
-	w1 = 2 * PI * freq * .1;  /* these .1 and 8 heuristics */
-	w2 = 2 * PI * freq * 8;
 
-	numer = 2 * w2 * w1 * log(w2 / w1);
-	denom = w2 - w1;
+    w1 = 2 * PI * freq * .1;  /* these .1 and 8 heuristics */
+    w2 = 2 * PI * freq * 8;
 
-	*aBasePtr = 1.3*numer / denom;  /* this 1.3 comes out from heuristics */
-	*bBasePtr = 0;
+    numer = 2 * w2 * w1 * log(w2 / w1);
+    denom = w2 - w1;
+
+    *aBasePtr = 1.3*numer / denom;  /* this 1.3 comes out from heuristics */
+    *bBasePtr = 0;
+
     }
-    else if ( Param.theTypeOfDamping == NONE || Param.theTypeOfDamping == BKT )
+    else if ( Param.theTypeOfDamping == NONE || Param.theTypeOfDamping >= BKT )
     {
-	*aBasePtr = 0;
-	*bBasePtr = 0;
+    *aBasePtr = 0;
+    *bBasePtr = 0;
     }
 
     return;
@@ -5912,18 +6307,18 @@ is_nodeloaded( int32_t iNode, char* onoff )
 static void
 compute_addforce_s( int32_t timestep )
 {
-    int i;	/* index for loaded nodes (from the source) */
+    int i;  /* index for loaded nodes (from the source) */
 
     for (i = 0; i <  Global.theNodesLoaded; i++) {
-	int lnid = Global.theNodesLoadedList[i];	/* local node id */
+    int lnid = Global.theNodesLoadedList[i];    /* local node id */
 
-	/* node's force vector */
-	fvector_t* nodalForce =	Global.mySolver->force + lnid;
+    /* node's force vector */
+    fvector_t* nodalForce = Global.mySolver->force + lnid;
 
-	/* vector-scalar multiply */
-	nodalForce->f[0] = ( Global.myForces [ i ].x [0] ) * Param.theDeltaTSquared;
-	nodalForce->f[1] = ( Global.myForces [ i ].x [1] ) * Param.theDeltaTSquared;
-	nodalForce->f[2] = ( Global.myForces [ i ].x [2] ) * Param.theDeltaTSquared;
+    /* vector-scalar multiply */
+    nodalForce->f[0] = ( Global.myForces [ i ].x [0] ) * Param.theDeltaTSquared;
+    nodalForce->f[1] = ( Global.myForces [ i ].x [1] ) * Param.theDeltaTSquared;
+    nodalForce->f[2] = ( Global.myForces [ i ].x [2] ) * Param.theDeltaTSquared;
     }
 }
 
@@ -5940,99 +6335,99 @@ compute_adjust(void *valuetable, int32_t itemsperentry, int32_t how)
     int32_t dnindex;
 
     if (how == DISTRIBUTION) {
-	for (dnindex = 0; dnindex < Global.myMesh->ldnnum; dnindex++) {
-	    dnode_t *dnode;
-	    solver_float *myvalue, *parentvalue;
-	    solver_float darray[7]; /* A hack to avoid memory allocation */
-	    int32link_t *int32link;
-	    int32_t idx, parentlnid;
+    for (dnindex = 0; dnindex < Global.myMesh->ldnnum; dnindex++) {
+        dnode_t *dnode;
+        solver_float *myvalue, *parentvalue;
+        solver_float darray[7]; /* A hack to avoid memory allocation */
+        int32link_t *int32link;
+        int32_t idx, parentlnid;
 #ifdef DEBUG
-	    int32_t deps = 0;
+        int32_t deps = 0;
 #endif /* DEBUG */
 
-	    dnode = &Global.myMesh->dnodeTable[dnindex];
-	    myvalue = vtable + dnode->ldnid * itemsperentry;
+        dnode = &Global.myMesh->dnodeTable[dnindex];
+        myvalue = vtable + dnode->ldnid * itemsperentry;
 
-	    for (idx = 0; idx < itemsperentry; idx++) {
-		darray[idx] = (*(myvalue + idx)) / dnode->deps;
-	    }
+        for (idx = 0; idx < itemsperentry; idx++) {
+        darray[idx] = (*(myvalue + idx)) / dnode->deps;
+        }
 
-	    /* Distribute my darray value to my anchors */
-	    int32link = dnode->lanid;
-	    while (int32link != NULL) {
+        /* Distribute my darray value to my anchors */
+        int32link = dnode->lanid;
+        while (int32link != NULL) {
 
 #ifdef DEBUG
-		deps++;
+        deps++;
 #endif
 
-		parentlnid = int32link->id;
-		parentvalue = vtable + parentlnid * itemsperentry;
+        parentlnid = int32link->id;
+        parentvalue = vtable + parentlnid * itemsperentry;
 
-		for (idx = 0; idx < itemsperentry; idx++) {
-		    /* Accumulation the distributed values */
-		    *(parentvalue + idx) += darray[idx];
-		}
+        for (idx = 0; idx < itemsperentry; idx++) {
+            /* Accumulation the distributed values */
+            *(parentvalue + idx) += darray[idx];
+        }
 
-		int32link = int32link->next;
-	    }
+        int32link = int32link->next;
+        }
 
 #ifdef DEBUG
-	    if (deps != (int)dnode->deps) {
-		fprintf(stderr, "Thread %d: compute_adjust distri: ", Global.myID);
-		fprintf(stderr, "deps don't match\n");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
+        if (deps != (int)dnode->deps) {
+        fprintf(stderr, "Thread %d: compute_adjust distri: ", Global.myID);
+        fprintf(stderr, "deps don't match\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
 #endif /* DEBUG */
-	} /* for all my LOCAL dangling nodes */
+    } /* for all my LOCAL dangling nodes */
 
     } else {
-	/* Assign the value of the anchored parents to the dangling nodes*/
+    /* Assign the value of the anchored parents to the dangling nodes*/
 
-	for (dnindex = 0; dnindex < Global.myMesh->ldnnum; dnindex++) {
-	    dnode_t *dnode;
-	    solver_float *myvalue, *parentvalue;
-	    int32link_t *int32link;
-	    int32_t idx, parentlnid;
+    for (dnindex = 0; dnindex < Global.myMesh->ldnnum; dnindex++) {
+        dnode_t *dnode;
+        solver_float *myvalue, *parentvalue;
+        int32link_t *int32link;
+        int32_t idx, parentlnid;
 #ifdef DEBUG
-	    int32_t deps = 0;
+        int32_t deps = 0;
 #endif /* DEBUG */
 
-	    dnode = &Global.myMesh->dnodeTable[dnindex];
-	    myvalue = vtable + dnode->ldnid * itemsperentry;
+        dnode = &Global.myMesh->dnodeTable[dnindex];
+        myvalue = vtable + dnode->ldnid * itemsperentry;
 
-	    /* Zero out the residual values the dangling node might
-	       still hold */
-	    memset(myvalue, 0, sizeof(solver_float) * itemsperentry);
+        /* Zero out the residual values the dangling node might
+           still hold */
+        memset(myvalue, 0, sizeof(solver_float) * itemsperentry);
 
-	    /* Assign prorated anchored values to a dangling node */
-	    int32link = dnode->lanid;
-	    while (int32link != NULL) {
+        /* Assign prorated anchored values to a dangling node */
+        int32link = dnode->lanid;
+        while (int32link != NULL) {
 
 #ifdef DEBUG
-		deps++;
+        deps++;
 #endif
 
-		parentlnid = int32link->id;
-		parentvalue = vtable + parentlnid * itemsperentry;
+        parentlnid = int32link->id;
+        parentvalue = vtable + parentlnid * itemsperentry;
 
-		for (idx = 0; idx < itemsperentry; idx++) {
-		    *(myvalue + idx) += (*(parentvalue + idx) / dnode->deps);
-		}
+        for (idx = 0; idx < itemsperentry; idx++) {
+            *(myvalue + idx) += (*(parentvalue + idx) / dnode->deps);
+        }
 
-		int32link = int32link->next;
-	    }
+        int32link = int32link->next;
+        }
 
 #ifdef DEBUG
-	    if (deps != (int)dnode->deps) {
-		fprintf(stderr, "Thread %d: compute_adjust assign: ", Global.myID);
-		fprintf(stderr, "deps don't match\n");
-		MPI_Abort(MPI_COMM_WORLD, ERROR);
-		exit(1);
-	    }
+        if (deps != (int)dnode->deps) {
+        fprintf(stderr, "Thread %d: compute_adjust assign: ", Global.myID);
+        fprintf(stderr, "deps don't match\n");
+        MPI_Abort(MPI_COMM_WORLD, ERROR);
+        exit(1);
+        }
 #endif /* DEBUG */
 
-	} /* for all my LOCAL dangling nodes */
+    } /* for all my LOCAL dangling nodes */
     }
 
     return;
@@ -6075,10 +6470,10 @@ static void print_timing_stat()
     printf("Total Wall Clock          : %.2f seconds\n", Timer_Value("Total Wall Clock",0));
     printf("Time/step                 : %.6f seconds\n", Timer_Value("Solver",0)/Param.theTotalSteps);
     printf("Time/step/(elem/PE)       : %.6f millisec\n",Timer_Value("Solver",0) * 1000.0 / Param.theTotalSteps /
-	   (Global.theETotal * 1.0 / Global.theGroupSize));
+       (Global.theETotal * 1.0 / Global.theGroupSize));
     printf("Simulation Rate Variation : %.3f (Average)   %.3f (Min)   %.3f (Max)  (sec/%d timesteps)\n",
-	   (Timer_Value("Solver",0)/Param.theTotalSteps)*Param.monitor_stats_rate,
-	   Global.fastestTimeSteps, Global.slowestTimeSteps, Param.monitor_stats_rate);
+       (Timer_Value("Solver",0)/Param.theTotalSteps)*Param.monitor_stats_rate,
+       Global.fastestTimeSteps, Global.slowestTimeSteps, Param.monitor_stats_rate);
     printf("\n");
 
 
@@ -6097,74 +6492,74 @@ static void print_timing_stat()
 
     if(Param.drmImplement == YES) {
 
-    	printf("DRM INIT PARAMETERS                 : %.2f (Max) %.2f (Min) seconds\n",
-    			Timer_Value("Init Drm Parameters",MAX), Timer_Value("Init Drm Parameters",MIN));
-    	printf("\n");
+        printf("DRM INIT PARAMETERS                 : %.2f (Max) %.2f (Min) seconds\n",
+                Timer_Value("Init Drm Parameters",MAX), Timer_Value("Init Drm Parameters",MIN));
+        printf("\n");
 
-    	printf("DRM INITIALIZATION                  : %.2f (Max) %.2f (Min) seconds\n",
-    			Timer_Value("Drm Init",MAX), Timer_Value("Drm Init",MIN));
+        printf("DRM INITIALIZATION                  : %.2f (Max) %.2f (Min) seconds\n",
+                Timer_Value("Drm Init",MAX), Timer_Value("Drm Init",MIN));
 
-    	if(Param.theDrmPart == PART2) {
+        if(Param.theDrmPart == PART2) {
 
-    		printf("    Find Drm File To Readjust       : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    				Timer_Value("Find Drm File To Readjust",AVERAGE),
-    				Timer_Value("Find Drm File To Readjust",MAX),
-    				Timer_Value("Find Drm File To Readjust",MIN));
+            printf("    Find Drm File To Readjust       : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                    Timer_Value("Find Drm File To Readjust",AVERAGE),
+                    Timer_Value("Find Drm File To Readjust",MAX),
+                    Timer_Value("Find Drm File To Readjust",MIN));
 
-    		printf("    Fill Drm Struct                 : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    				Timer_Value("Fill Drm Struct",AVERAGE),
-    				Timer_Value("Fill Drm Struct",MAX),
-    				Timer_Value("Fill Drm Struct",MIN));
+            printf("    Fill Drm Struct                 : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                    Timer_Value("Fill Drm Struct",AVERAGE),
+                    Timer_Value("Fill Drm Struct",MAX),
+                    Timer_Value("Fill Drm Struct",MIN));
 
-    		printf("    Comm of Drm Coordinates         : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    				Timer_Value("Comm of Drm Coordinates",AVERAGE),
-    				Timer_Value("Comm of Drm Coordinates",MAX),
-    				Timer_Value("Comm of Drm Coordinates",MIN));
+            printf("    Comm of Drm Coordinates         : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                    Timer_Value("Comm of Drm Coordinates",AVERAGE),
+                    Timer_Value("Comm of Drm Coordinates",MAX),
+                    Timer_Value("Comm of Drm Coordinates",MIN));
 
-    		printf("    Find Which Drm Files To Print   : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    				Timer_Value("Find Which Drm Files To Print",AVERAGE),
-    				Timer_Value("Find Which Drm Files To Print",MAX),
-    				Timer_Value("Find Which Drm Files To Print",MIN));
+            printf("    Find Which Drm Files To Print   : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                    Timer_Value("Find Which Drm Files To Print",AVERAGE),
+                    Timer_Value("Find Which Drm Files To Print",MAX),
+                    Timer_Value("Find Which Drm Files To Print",MIN));
 
-    		printf("    Read And Rearrange Drm Files    : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    				Timer_Value("Read And Rearrange Drm Files",AVERAGE),
-    				Timer_Value("Read And Rearrange Drm Files",MAX),
-    				Timer_Value("Read And Rearrange Drm Files",MIN));
+            printf("    Read And Rearrange Drm Files    : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                    Timer_Value("Read And Rearrange Drm Files",AVERAGE),
+                    Timer_Value("Read And Rearrange Drm Files",MAX),
+                    Timer_Value("Read And Rearrange Drm Files",MIN));
 
-    		printf("    Find Which Drm Files To Read    : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    				Timer_Value("Find Which Drm Files To Read",AVERAGE),
-    				Timer_Value("Find Which Drm Files To Read",MAX),
-    				Timer_Value("Find Which Drm Files To Read",MIN));
+            printf("    Find Which Drm Files To Read    : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                    Timer_Value("Find Which Drm Files To Read",AVERAGE),
+                    Timer_Value("Find Which Drm Files To Read",MAX),
+                    Timer_Value("Find Which Drm Files To Read",MIN));
 
-    		printf("    Locate where I am in file       : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    				Timer_Value("Locate where I am in file",AVERAGE),
-    				Timer_Value("Locate where I am in file",MAX),
-    				Timer_Value("Locate where I am in file",MIN));
+            printf("    Locate where I am in file       : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                    Timer_Value("Locate where I am in file",AVERAGE),
+                    Timer_Value("Locate where I am in file",MAX),
+                    Timer_Value("Locate where I am in file",MIN));
 
-    	}
-    	printf("\n");
+        }
+        printf("\n");
     }
 
     printf("SOURCE INITIALIZATION               : %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Source Init",MAX), Timer_Value("Source Init",MIN));
+       Timer_Value("Source Init",MAX), Timer_Value("Source Init",MIN));
     printf("\n");
     printf("TOTAL SOLVER                        : %.2f seconds\n", Timer_Value("Solver",0));
     printf("    Read My Forces                  : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Read My Forces",AVERAGE),
-	   Timer_Value("Read My Forces",MAX),
-	   Timer_Value("Read My Forces",MIN));
+       Timer_Value("Read My Forces",AVERAGE),
+       Timer_Value("Read My Forces",MAX),
+       Timer_Value("Read My Forces",MIN));
     printf("    Compute addforces s             : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Compute addforces s",AVERAGE),
-	   Timer_Value("Compute addforces s",MAX),
-	   Timer_Value("Compute addforces s",MIN));
+       Timer_Value("Compute addforces s",AVERAGE),
+       Timer_Value("Compute addforces s",MAX),
+       Timer_Value("Compute addforces s",MIN));
     printf("    Compute addforces e             : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Compute addforces e",AVERAGE),
-	   Timer_Value("Compute addforces e",MAX),
-	   Timer_Value("Compute addforces e",MIN));
+       Timer_Value("Compute addforces e",AVERAGE),
+       Timer_Value("Compute addforces e",MAX),
+       Timer_Value("Compute addforces e",MIN));
     printf("    Compute Damping addforce        : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Damping addforce",AVERAGE),
-	   Timer_Value("Damping addforce",MAX),
-	   Timer_Value("Damping addforce",MIN));
+       Timer_Value("Damping addforce",AVERAGE),
+       Timer_Value("Damping addforce",MAX),
+       Timer_Value("Damping addforce",MIN));
     if ( Timer_Exists("Compute Non-linear Entities") )
         printf("    Compute Non-linear Entities     : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
                 Timer_Value("Compute Non-linear Entities",AVERAGE),
@@ -6182,82 +6577,82 @@ static void print_timing_stat()
     }
 
     if ( Timer_Exists("Solver drm force compute") ) {
-    	printf("    Solver drm force compute        : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    			Timer_Value("Solver drm force compute",AVERAGE),
-    			Timer_Value("Solver drm force compute",MAX),
-    			Timer_Value("Solver drm force compute",MIN));
+        printf("    Solver drm force compute        : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                Timer_Value("Solver drm force compute",AVERAGE),
+                Timer_Value("Solver drm force compute",MAX),
+                Timer_Value("Solver drm force compute",MIN));
     }
     printf("    1st schedule send data          : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("1st schedule send data (contribution)",AVERAGE),
-	   Timer_Value("1st schedule send data (contribution)",MAX),
-	   Timer_Value("1st schedule send data (contribution)",MIN));
+       Timer_Value("1st schedule send data (contribution)",AVERAGE),
+       Timer_Value("1st schedule send data (contribution)",MAX),
+       Timer_Value("1st schedule send data (contribution)",MIN));
     printf("    1st compute adjust              : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("1st compute adjust (distribution)",AVERAGE),
-	   Timer_Value("1st compute adjust (distribution)",MAX),
-	   Timer_Value("1st compute adjust (distribution)",MIN));
+       Timer_Value("1st compute adjust (distribution)",AVERAGE),
+       Timer_Value("1st compute adjust (distribution)",MAX),
+       Timer_Value("1st compute adjust (distribution)",MIN));
     printf("    2nd schedule send data          : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("2nd schedule send data (contribution)",AVERAGE),
-	   Timer_Value("2nd schedule send data (contribution)",MAX),
-	   Timer_Value("2nd schedule send data (contribution)",MIN));
+       Timer_Value("2nd schedule send data (contribution)",AVERAGE),
+       Timer_Value("2nd schedule send data (contribution)",MAX),
+       Timer_Value("2nd schedule send data (contribution)",MIN));
     printf("    Compute new displacement        : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Compute new displacement",AVERAGE),
-	   Timer_Value("Compute new displacement",MAX),
-	   Timer_Value("Compute new displacement",MIN));
+       Timer_Value("Compute new displacement",AVERAGE),
+       Timer_Value("Compute new displacement",MAX),
+       Timer_Value("Compute new displacement",MIN));
     printf("    3rd schedule send data          : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("3rd schedule send data (sharing)",AVERAGE),
-	   Timer_Value("3rd schedule send data (sharing)",MAX),
-	   Timer_Value("3rd schedule send data (sharing)",MIN));
+       Timer_Value("3rd schedule send data (sharing)",AVERAGE),
+       Timer_Value("3rd schedule send data (sharing)",MAX),
+       Timer_Value("3rd schedule send data (sharing)",MIN));
     printf("    2nd compute adjust              : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("2nd compute adjust (assignment)",AVERAGE),
-	   Timer_Value("2nd compute adjust (assignment)",MAX),
-	   Timer_Value("2nd compute adjust (assignment)",MIN));
+       Timer_Value("2nd compute adjust (assignment)",AVERAGE),
+       Timer_Value("2nd compute adjust (assignment)",MAX),
+       Timer_Value("2nd compute adjust (assignment)",MIN));
     printf("    4th schadule send data          : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("4th schadule send data (sharing)",AVERAGE),
-	   Timer_Value("4th schadule send data (sharing)",MAX),
-	   Timer_Value("4th schadule send data (sharing)",MIN));
+       Timer_Value("4th schadule send data (sharing)",AVERAGE),
+       Timer_Value("4th schadule send data (sharing)",MAX),
+       Timer_Value("4th schadule send data (sharing)",MIN));
     printf("    IO\n");
 
     if ( Timer_Exists("Solver drm output") ) {
-    	printf("        Drm Output                  : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    			Timer_Value("Solver drm output",AVERAGE),
-    			Timer_Value("Solver drm output",MAX),
-    			Timer_Value("Solver drm output",MIN));
+        printf("        Drm Output                  : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                Timer_Value("Solver drm output",AVERAGE),
+                Timer_Value("Solver drm output",MAX),
+                Timer_Value("Solver drm output",MIN));
     }
     if ( Timer_Exists("Solver drm read displacements") ) {
-    	printf("        Solver drm read disp        : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-    			Timer_Value("Solver drm read displacements",AVERAGE),
-    			Timer_Value("Solver drm read displacements",MAX),
-    			Timer_Value("Solver drm read displacements",MIN));
+        printf("        Solver drm read disp        : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+                Timer_Value("Solver drm read displacements",AVERAGE),
+                Timer_Value("Solver drm read displacements",MAX),
+                Timer_Value("Solver drm read displacements",MIN));
     }
     printf("        Solver Stats Print          : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Solver Stats Print",AVERAGE),
-	   Timer_Value("Solver Stats Print",MAX),
-	   Timer_Value("Solver Stats Print",MIN));
+       Timer_Value("Solver Stats Print",AVERAGE),
+       Timer_Value("Solver Stats Print",MAX),
+       Timer_Value("Solver Stats Print",MIN));
     if( Timer_Exists("Print Planes") )
-	printf("        Planes                      : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	       Timer_Value("Print Planes",AVERAGE),
-	       Timer_Value("Print Planes",MAX),
-	       Timer_Value("Print Planes",MIN));
+    printf("        Planes                      : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+           Timer_Value("Print Planes",AVERAGE),
+           Timer_Value("Print Planes",MAX),
+           Timer_Value("Print Planes",MIN));
     if( Timer_Exists("Print Stations") )
-	printf("        Stations                    : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	       Timer_Value("Print Stations",AVERAGE),
-	       Timer_Value("Print Stations",MAX),
-	       Timer_Value("Print Stations",MIN));
+    printf("        Stations                    : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
+           Timer_Value("Print Stations",AVERAGE),
+           Timer_Value("Print Stations",MAX),
+           Timer_Value("Print Stations",MIN));
     if( Timer_Exists("Checkpoint") )
-	printf("        Checkpoint                  : %.2f\n",
-	       Timer_Value("Checkpoint",0));
+    printf("        Checkpoint                  : %.2f\n",
+           Timer_Value("Checkpoint",0));
     printf("\n");
     printf("TOTAL WALL CLOCK                    : %.2f seconds\n", Timer_Value("Total Wall Clock",0));
     printf("\n");
     printf("\n____________Analysis_____________\n");
     printf("Solver I/O                 : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Solver I/O",      AVERAGE),Timer_Value("Solver I/O",      MAX), Timer_Value("Solver I/O",      MIN));
+       Timer_Value("Solver I/O",      AVERAGE),Timer_Value("Solver I/O",      MAX), Timer_Value("Solver I/O",      MIN));
     printf("Solver Compute             : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Compute Physics", AVERAGE),Timer_Value("Compute Physics", MAX), Timer_Value("Compute Physics", MIN));
+       Timer_Value("Compute Physics", AVERAGE),Timer_Value("Compute Physics", MAX), Timer_Value("Compute Physics", MIN));
     printf("Solver Communicate         : %.2f (Average)   %.2f (Max) %.2f (Min) seconds\n",
-	   Timer_Value("Communication",   AVERAGE),Timer_Value("Communication",   MAX), Timer_Value("Communication",   MIN));
+       Timer_Value("Communication",   AVERAGE),Timer_Value("Communication",   MAX), Timer_Value("Communication",   MIN));
     printf("Compute/Communicate Ratio  : %.2f \n",
-	   Timer_Value("Compute Physics", AVERAGE) / Timer_Value("Communication",   AVERAGE) );
+       Timer_Value("Compute Physics", AVERAGE) / Timer_Value("Communication",   AVERAGE) );
     printf("\n\n\n\n");
 
     fflush (stdout);
@@ -6274,73 +6669,82 @@ static void print_timing_stat()
 static void
 source_init( const char* physicsin )
 {
-	if(( Param.drmImplement == NO )||( Param.drmImplement == YES && Param.theDrmPart == PART1 )){
+    if(( Param.drmImplement == NO )||( Param.drmImplement == YES && Param.theDrmPart == PART1 )){
 
-		double globalDelayT = 0;
-		double surfaceShift = 0;
+        double globalDelayT = 0;
+        double surfaceShift = 0;
 
-		/* Load to Global.theMPIInformation */
-		Global.theMPIInformation.myid      = Global.myID;
-		Global.theMPIInformation.groupsize = Global.theGroupSize;
+        /* Load to Global.theMPIInformation */
+        Global.theMPIInformation.myid      = Global.myID;
+        Global.theMPIInformation.groupsize = Global.theGroupSize;
 
-		/* Load to theNumericsInforamation */
-		Global.theNumericsInformation.numberoftimesteps = Param.theTotalSteps;
-		Global.theNumericsInformation.deltat	     = Param.theDeltaT;
-		Global.theNumericsInformation.validfrequency    = Param.theFreq;
+        /* Load to theNumericsInforamation */
+        Global.theNumericsInformation.numberoftimesteps = Param.theTotalSteps;
+        Global.theNumericsInformation.deltat            = Param.theDeltaT;
+        Global.theNumericsInformation.validfrequency    = Param.theFreq;
+        Global.theNumericsInformation.endT              = Param.theEndT;
+        Global.theNumericsInformation.startT            = Param.theStartT;
 
-		Global.theNumericsInformation.xlength = Param.theDomainX;
-		Global.theNumericsInformation.ylength = Param.theDomainY;
-		Global.theNumericsInformation.zlength = Param.theDomainZ;
 
-		if ( Param.includeNonlinearAnalysis == YES ) {
-			globalDelayT = get_geostatic_total_time();
-		}
+        Global.theNumericsInformation.xlength = Param.theDomainX;
+        Global.theNumericsInformation.ylength = Param.theDomainY;
+        Global.theNumericsInformation.zlength = Param.theDomainZ;
 
-		if ( Param.includeBuildings == YES ) {
-			surfaceShift = get_surface_shift();
-		}
+        if ( Param.includeNonlinearAnalysis == YES ) {
+            globalDelayT = get_geostatic_total_time();
+        }
 
-		/* it will create the files to be read each time step to
+        if ( Param.includeBuildings == YES ) {
+            surfaceShift = get_surface_shift();
+        }
+
+        //TODO: check that this shifting only has effect here
+    //  if ( Param.includeTopography == YES ) {
+    //      surfaceShift = get_thebase_topo();
+    //  }
+
+
+        /* it will create the files to be read each time step to
        load (force) the mesh */
-		if ( compute_print_source( physicsin, Global.myOctree, Global.myMesh,
-				Global.theNumericsInformation, Global.theMPIInformation,
-				globalDelayT, surfaceShift ) )
-		{
-			fprintf(stdout,"Err:cannot create source forces");
-			MPI_Abort(MPI_COMM_WORLD, ERROR);
-			exit(1);
-		}
+        if ( compute_print_source( physicsin, Global.myOctree, Global.myMesh,
+                Global.theNumericsInformation, Global.theMPIInformation,
+                globalDelayT, surfaceShift ) )
+        {
+            fprintf(stdout,"Err:cannot create source forces");
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
 
-		Global.theNodesLoaded = source_get_local_loaded_nodes_count();
+        Global.theNodesLoaded = source_get_local_loaded_nodes_count();
 
-		if (Global.theNodesLoaded != 0) {
-			size_t ret;
-			int32_t node_count;
+        if (Global.theNodesLoaded != 0) {
+            size_t ret;
+            int32_t node_count;
 
-			Global.fpsource = source_open_forces_file( "r" );
+            Global.fpsource = source_open_forces_file( "r" );
 
-			hu_fread( &node_count, sizeof(int32_t), 1, Global.fpsource );
+            hu_fread( &node_count, sizeof(int32_t), 1, Global.fpsource );
 
-			/* \todo add assertion for node_count == Global.theNodesLoaded */
+            /* \todo add assertion for node_count == Global.theNodesLoaded */
 
-			Global.theNodesLoadedList = malloc( sizeof(int32_t) * Global.theNodesLoaded );
-			Global.myForces	   = calloc( Global.theNodesLoaded, sizeof(vector3D_t) );
+            Global.theNodesLoadedList = malloc( sizeof(int32_t) * Global.theNodesLoaded );
+            Global.myForces    = calloc( Global.theNodesLoaded, sizeof(vector3D_t) );
 
-			if (Global.myForces == NULL || Global.theNodesLoadedList == NULL) {
-				solver_abort( "source_init", "memory allocation failed",
-						"Cannot allocate memory for Global.myForces or "
-						"loaded nodes list arrays\n" );
-			}
+            if (Global.myForces == NULL || Global.theNodesLoadedList == NULL) {
+                solver_abort( "source_init", "memory allocation failed",
+                        "Cannot allocate memory for Global.myForces or "
+                        "loaded nodes list arrays\n" );
+            }
 
-			ret = hu_fread( Global.theNodesLoadedList, sizeof(int32_t), Global.theNodesLoaded,
-					Global.fpsource );
+            ret = hu_fread( Global.theNodesLoadedList, sizeof(int32_t), Global.theNodesLoaded,
+                    Global.fpsource );
 
-			if (ret != Global.theNodesLoaded) {
-				solver_abort( "source_init(", "fread failed",
-						"Could not read nodal force file");
-			}
-		}
-	}
+            if (ret != Global.theNodesLoaded) {
+                solver_abort( "source_init(", "fread failed",
+                        "Could not read nodal force file");
+            }
+        }
+    }
 }
 
 
@@ -6376,7 +6780,7 @@ int32_t search_point( vector3D_t point, octant_t **octant )
  */
 extern int
 compute_csi_eta_dzeta( octant_t* octant, vector3D_t pointcoords,
-		       vector3D_t* localcoords, int32_t* localNodeID )
+               vector3D_t* localcoords, int32_t* localNodeID )
 {
     tick_t  edgeticks;
     int32_t eindex;
@@ -6431,12 +6835,45 @@ compute_csi_eta_dzeta( octant_t* octant, vector3D_t pointcoords,
         exit(1);
     }
 
-    /* Derive the local coordinate of the source inside the element */
     localcoords->x[0] =  2*(xGlobal- center_x)/h;
     localcoords->x[1] =  2*(yGlobal- center_y)/h;
     localcoords->x[2] =  2*(zGlobal- center_z)/h;
 
+    /* redefine local coordinates and nodes to interpolate if VT is on */
+
+    //FILE  *topoinfo = hu_fopen( "topoElem.txt", "w" );
+
+    if ( ( Param.includeTopography == YES ) && ( isTopoElement ( Global.myMesh, eindex, 0) )
+         && (get_topo_meth() == VT ) && (Param.drmImplement == NO) ) {
+        elem_t  *elemp;
+        edata_t *edata;
+
+        elemp  = &Global.myMesh->elemTable[eindex];
+        edata = (edata_t *)elemp->data;
+
+        /* Calculate the element's origin */
+        double xo = Global.myMesh->ticksize * octant->lx;
+        double yo = Global.myMesh->ticksize * octant->ly;
+        double zo = Global.myMesh->ticksize * octant->lz;
+
+        double aux[3] = {0};
+        int cube_part = get_cube_partition( eindex );
+
+        compute_tetra_localcoord ( pointcoords, elemp,
+                localNodeID, aux, xo, yo, zo, h, cube_part  );
+
+        localcoords->x[0] = aux[0];
+        localcoords->x[1] = aux[1];
+        localcoords->x[2] = aux[2];
+
+        *(localNodeID + 4)=0;
+        *(localNodeID + 5)=0;
+        *(localNodeID + 6)=0;
+        *(localNodeID + 7)=0;
+    }
+
     return 1;
+
 }
 
 
@@ -6456,30 +6893,30 @@ read_stations_info( const char* numericalin )
 
     /* obtain the stations specifications */
     if ( (fp = fopen ( numericalin, "r")) == NULL ) {
-	solver_abort (fname, numericalin,
-		      "Error opening numerical.in configuration file");
+    solver_abort (fname, numericalin,
+              "Error opening numerical.in configuration file");
     }
 
     auxiliar = (double *)malloc(sizeof(double)*8);
 
     if ( parsedarray( fp, "domain_surface_corners", 8, auxiliar ) != 0) {
-	solver_abort( fname, NULL,
-		      "Error parsing domain_surface_corners field from %s\n",
-		      numericalin);
+    solver_abort( fname, NULL,
+              "Error parsing domain_surface_corners field from %s\n",
+              numericalin);
     }
 
     for ( iCorner = 0; iCorner < 4; iCorner++){
-	Param.theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
-	Param.theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
+    Param.theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
+    Param.theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
     }
     free(auxiliar);
 
 
     if (parsetext( fp, "output_stations_print_rate", 'i',
-		   &Param.theStationsPrintRate ) != 0) {
-	solver_abort( fname, NULL,
-		      "Error parsing output_planes_print_rate field from %s\n",
-		      numericalin );
+           &Param.theStationsPrintRate ) != 0) {
+    solver_abort( fname, NULL,
+              "Error parsing output_planes_print_rate field from %s\n",
+              numericalin );
     }
 
     auxiliar    = (double*)malloc( sizeof(double) * Param.theNumberOfStations * 3 );
@@ -6488,41 +6925,47 @@ read_stations_info( const char* numericalin )
     Param.theStationZ = (double*)malloc( sizeof(double) * Param.theNumberOfStations );
 
     if (Param.theStationX == NULL || Param.theStationY == NULL || Param.theStationZ == NULL) {
-	fprintf( stdout,
-		 "Err alloc theStations arrays in output_stations_init" );
-	fflush( stdout );
-	MPI_Abort(MPI_COMM_WORLD, ERROR );
-	exit( 1 );
+    fprintf( stdout,
+         "Err alloc theStations arrays in output_stations_init" );
+    fflush( stdout );
+    MPI_Abort(MPI_COMM_WORLD, ERROR );
+    exit( 1 );
     }
 
     if (parsedarray( fp, "output_stations", Param.theNumberOfStations * 3,
-		     auxiliar ) != 0) {
-	solver_abort (fname, NULL,
-		      "Err parsing output_stations from %s\n", numericalin);
+             auxiliar ) != 0) {
+    solver_abort (fname, NULL,
+              "Err parsing output_stations from %s\n", numericalin);
     }
 
     for (iStation = 0; iStation < Param.theNumberOfStations; iStation++) {
-	lat    = auxiliar [ iStation * 3 ];
-	lon    = auxiliar [ iStation * 3 +1 ];
-	depth  = auxiliar [ iStation * 3 +2 ];
-	coords = compute_domain_coords_linearinterp(lon,lat,
-						    Param.theSurfaceCornersLong,
-						    Param.theSurfaceCornersLat,
-						    Param.theDomainY,Param.theDomainX);
-	Param.theStationX [ iStation ] = coords.x[0];
-	Param.theStationY [ iStation ] = coords.x[1];
-	Param.theStationZ [ iStation ] = depth;
+    lat    = auxiliar [ iStation * 3 ];
+    lon    = auxiliar [ iStation * 3 +1 ];
+    depth  = auxiliar [ iStation * 3 +2 ];
+    coords = compute_domain_coords_linearinterp(lon,lat,
+                            Param.theSurfaceCornersLong,
+                            Param.theSurfaceCornersLat,
+                            Param.theDomainY,Param.theDomainX);
+    Param.theStationX [ iStation ] = coords.x[0];
+    Param.theStationY [ iStation ] = coords.x[1];
+    Param.theStationZ [ iStation ] = depth;
 
-	if ( Param.includeBuildings == YES ) {
-	    Param.theStationZ [ iStation ] += get_surface_shift();
-	}
+    if ( Param.includeBuildings == YES ) {
+        Param.theStationZ [ iStation ] += get_surface_shift();
+    }
+    if ( Param.includeTopography == YES ) {
+        //      Param.theStationZ [ iStation ] += get_thebase_topo();
+        /* Dorian: place stations on surface */
+        Param.theStationZ [ iStation ] +=  point_elevation ( coords.x[0], coords.x[1] );
+    }
+
     }
 
     free( auxiliar );
 
     if ( parsetext(fp, "output_stations_directory",'s',Param.theStationsDirOut)!= 0)
-	solver_abort (fname, NULL, "Error parsing fields from %s\n",
-		      numericalin);
+    solver_abort (fname, NULL, "Error parsing fields from %s\n",
+              numericalin);
 
     return;
 }
@@ -6536,14 +6979,14 @@ broadcast_stations_info()
 {
     /*initialize the local structures */
     if ( Global.myID != 0 ) {
-	Param.theStationX = (double*)malloc( sizeof(double) * Param.theNumberOfStations);
-	Param.theStationY = (double*)malloc( sizeof(double) * Param.theNumberOfStations);
-	Param.theStationZ = (double*)malloc( sizeof(double) * Param.theNumberOfStations);
+    Param.theStationX = (double*)malloc( sizeof(double) * Param.theNumberOfStations);
+    Param.theStationY = (double*)malloc( sizeof(double) * Param.theNumberOfStations);
+    Param.theStationZ = (double*)malloc( sizeof(double) * Param.theNumberOfStations);
 
-	if (Param.theStationX == NULL ||  Param.theStationY == NULL || Param.theStationZ==NULL) {
-	    solver_abort( "broadcast_stations_info", NULL,
-			  "Error: Unable to create stations arrays" );
-	}
+    if (Param.theStationX == NULL ||  Param.theStationY == NULL || Param.theStationZ==NULL) {
+        solver_abort( "broadcast_stations_info", NULL,
+              "Error: Unable to create stations arrays" );
+    }
     }
 
     MPI_Barrier( comm_solver );
@@ -6554,7 +6997,7 @@ broadcast_stations_info()
     MPI_Bcast(&Param.theStationsPrintRate, 1, MPI_INT, 0, comm_solver);
 
     broadcast_char_array( Param.theStationsDirOut, sizeof(Param.theStationsDirOut), 0,
-			  comm_solver );
+              comm_solver );
 
     return;
 }
@@ -6586,61 +7029,61 @@ void setup_stations_data()
     /* allocate memory if necessary and generate the list of stations per
      * processor */
     if (Param.myNumberOfStations != 0) {
-	monitor_print( "PE=%d local_stations=%d total_station_count=%d\n",
-		       Global.myID, Param.myNumberOfStations, Param.theNumberOfStations );
+//  monitor_print( "PE=%d local_stations=%d total_station_count=%d\n",
+//             Global.myID, Param.myNumberOfStations, Param.theNumberOfStations );
 
-	XMALLOC_VAR_N( Param.myStations, station_t, Param.myNumberOfStations );
+    XMALLOC_VAR_N( Param.myStations, station_t, Param.myNumberOfStations );
     }
 
     for (iStation = 0; iStation < Param.theNumberOfStations; iStation++) {
-	stationCoords.x[0] = Param.theStationX[iStation];
-	stationCoords.x[1] = Param.theStationY[iStation];
-	stationCoords.x[2] = Param.theStationZ[iStation];
+    stationCoords.x[0] = Param.theStationX[iStation];
+    stationCoords.x[1] = Param.theStationY[iStation];
+    stationCoords.x[2] = Param.theStationZ[iStation];
 
-	if (search_point( stationCoords, &octant ) == 1) {
-	    Param.myStations[iLCStation].id = iStation;
-	    Param.myStations[iLCStation].coords=stationCoords;
-	    sprintf(stationFile, "%s/station.%d",Param.theStationsDirOut,iStation);
-	    Param.myStations[iLCStation].fpoutputfile = hu_fopen( stationFile,"w" );
-	    compute_csi_eta_dzeta( octant, Param.myStations[iLCStation].coords,
-				   &(Param.myStations[iLCStation].localcoords),
-				   Param.myStations[iLCStation].nodestointerpolate);
+    if (search_point( stationCoords, &octant ) == 1) {
+        Param.myStations[iLCStation].id = iStation;
+        Param.myStations[iLCStation].coords=stationCoords;
+        sprintf(stationFile, "%s/station.%d",Param.theStationsDirOut,iStation);
+        Param.myStations[iLCStation].fpoutputfile = hu_fopen( stationFile,"w" );
+        compute_csi_eta_dzeta( octant, Param.myStations[iLCStation].coords,
+                   &(Param.myStations[iLCStation].localcoords),
+                   Param.myStations[iLCStation].nodestointerpolate);
 
-	    /*
-	     * This section now enclosed in a DEBUG def because its information
-	     * is only useful for debugging purposes and otherwise it just
-	     * introduce noise to the post-processing.
-	     */
+        /*
+         * This section now enclosed in a DEBUG def because its information
+         * is only useful for debugging purposes and otherwise it just
+         * introduce noise to the post-processing.
+         */
 #ifdef DEBUG
-	    fprintf( Param.myStations[iLCStation].fpoutputfile,
-		     "# Node identifiers:\n" );
+        fprintf( Param.myStations[iLCStation].fpoutputfile,
+             "# Node identifiers:\n" );
 
-	    int iNode;
+        int iNode;
 
-	    for (iNode = 0; iNode < 8; iNode++) {
-		fprintf( Param.myStations[iLCStation].fpoutputfile,
-			 "#  %13" INT64_FMT "\n",
-			 Global.myMesh->nodeTable[Param.myStations[iLCStation].nodestointerpolate[iNode]].gnid );
-	    }
+        for (iNode = 0; iNode < 8; iNode++) {
+        fprintf( Param.myStations[iLCStation].fpoutputfile,
+             "#  %13" INT64_FMT "\n",
+             Global.myMesh->nodeTable[Param.myStations[iLCStation].nodestointerpolate[iNode]].gnid );
+        }
 #endif /* DEBUG */
 
-	    /*
-	     * This is a one line heading for the station files. Spacing is
-	     * such that it aligns with data.
-	     *
-	     * The lines after X and Y represent the actual orientation of the
-	     * axes if one looks at the domain's surface on a screen. Zeta's dot
-	     * means the Z axis goes in(+) and out(-) of the screen.
-	     */
+        /*
+         * This is a one line heading for the station files. Spacing is
+         * such that it aligns with data.
+         *
+         * The lines after X and Y represent the actual orientation of the
+         * axes if one looks at the domain's surface on a screen. Zeta's dot
+         * means the Z axis goes in(+) and out(-) of the screen.
+         */
 
-	    fputs( "#  Time(s)         X|(m)         Y-(m)         Z.(m)",
-	            Param.myStations[iLCStation].fpoutputfile );
+        fputs( "#  Time(s)         X|(m)         Y-(m)         Z.(m)",
+                Param.myStations[iLCStation].fpoutputfile );
 
-	    if ( ( Param.printStationVelocities    == YES ) ||
-	         ( Param.printStationAccelerations == YES ) ) {
-	        fputs( "       X|(m/s)       Y-(m/s)       Z.(m/s)",
-	                Param.myStations[iLCStation].fpoutputfile );
-	    }
+        if ( ( Param.printStationVelocities    == YES ) ||
+             ( Param.printStationAccelerations == YES ) ) {
+            fputs( "       X|(m/s)       Y-(m/s)       Z.(m/s)",
+                    Param.myStations[iLCStation].fpoutputfile );
+        }
 
             if ( Param.printStationAccelerations == YES ) {
                 fputs( "      X|(m/s2)      Y-(m/s2)      Z.(m/s2)",
@@ -6648,23 +7091,25 @@ void setup_stations_data()
             }
 
             /*
-	     * Additional headings for nonlinear data.
-	     */
-	    if ( Param.includeNonlinearAnalysis == YES ) {
-	        fputs(  "    Epsilon_XX      Sigma_XX"
-	                "    Epsilon_YY      Sigma_YY"
+         * Additional headings for nonlinear data.
+         */
+        if ( Param.includeNonlinearAnalysis == YES ) {
+            fputs(  "    Epsilon_XX      Sigma_XX"
+                    "    Epsilon_YY      Sigma_YY"
                         "    Epsilon_ZZ      Sigma_ZZ"
                         "    Epsilon_KK      Sigma_KK"
-	                "    Epsilon_XY      Sigma_XY"
-	                "    Epsilon_YZ      Sigma_YZ"
-	                "    Epsilon_XZ      Sigma_XZ"
-	                "        lambda            Fs"
-	                "             k",
-	                Param.myStations[iLCStation].fpoutputfile );
-	    }
+                    "    Epsilon_XY      Sigma_XY"
+                    "    Epsilon_YZ      Sigma_YZ"
+                    "    Epsilon_XZ      Sigma_XZ"
+                    "            Fs         Kappa"
+                    "       Gamma1d         Tao1d"
+                    "         GGmax",
 
-	    iLCStation += 1;
-	}
+                    Param.myStations[iLCStation].fpoutputfile );
+        }
+
+        iLCStation += 1;
+    }
     }
 
     free( Param.theStationX );
@@ -6709,17 +7154,52 @@ interpolate_station_displacements( int32_t step )
         dis_y = 0;
         dis_z = 0;
 
+        vel_x = 0;
+        vel_y = 0;
+        vel_z = 0;
+
+        acc_x = 0;
+        acc_y = 0;
+        acc_z = 0;
+
+        double time = Param.theDeltaT * step;
+
+        if ( ( Param.includeTopography == YES ) &&
+                ( compute_tetra_displ (&dis_x, &dis_y, &dis_z,
+                        &vel_x, &vel_y, &vel_z,
+                        &acc_x, &acc_y, &acc_z,
+                        Param.theDeltaT, Param.theDeltaTSquared,
+                        iStation,Global.mySolver) == 1 ) ) {
+
+            fprintf( Param.myStations[iStation].fpoutputfile,
+                    "\n%10.6f % 8e % 8e % 8e",
+                    time, dis_x, dis_y, dis_z );
+
+            if (  Param.printStationVelocities    == YES ) {
+                fprintf( Param.myStations[iStation].fpoutputfile,
+                        " % 8e % 8e % 8e", vel_x, vel_y, vel_z );
+            }
+
+            if ( Param.printStationAccelerations == YES ) {
+                fprintf( Param.myStations[iStation].fpoutputfile,
+                        " % 8e % 8e % 8e", acc_x, acc_y, acc_z );
+            }
+
+            if ( (step % (Param.theStationsPrintRate*10)) == 0 ) {
+                fflush(Param.myStations[iStation].fpoutputfile);
+            }
+
+        } else {
+
         for (iPhi = 0; iPhi < 8; iPhi++) {
             phi[ iPhi ] = ( 1 + xi[0][iPhi]*localCoords.x[0] )
-		                * ( 1 + xi[1][iPhi]*localCoords.x[1] )
-		                * ( 1 + xi[2][iPhi]*localCoords.x[2] ) / 8;
+                        * ( 1 + xi[1][iPhi]*localCoords.x[1] )
+                        * ( 1 + xi[2][iPhi]*localCoords.x[2] ) / 8;
 
             dis_x += phi[iPhi] * Global.mySolver->tm1[ nodesToInterpolate[iPhi] ].f[0];
             dis_y += phi[iPhi] * Global.mySolver->tm1[ nodesToInterpolate[iPhi] ].f[1];
             dis_z += phi[iPhi] * Global.mySolver->tm1[ nodesToInterpolate[iPhi] ].f[2];
         }
-
-        double time = Param.theDeltaT * step;
 
         /*
          * Please DO NOT CHANGE the format for printing the displacements.
@@ -6785,9 +7265,11 @@ interpolate_station_displacements( int32_t step )
                      " % 8e % 8e % 8e", acc_x, acc_y, acc_z );
         }
 
-	/* TODO: Have this 10 as a parameter with a default value */
+    /* TODO: Have this 10 as a parameter with a default value */
         if ( (step % (Param.theStationsPrintRate*10)) == 0 ) {
             fflush(Param.myStations[iStation].fpoutputfile);
+        }
+
         }
     }
 
@@ -6798,15 +7280,123 @@ interpolate_station_displacements( int32_t step )
 /**
  * Init stations info and data structures
  */
-void output_stations_init( const char* numericalin )
-{
+void output_stations_init( const char* numericalin ) {
+
     if (Global.myID == 0) {
-	read_stations_info( numericalin );
+        read_stations_info( numericalin );
     }
 
     broadcast_stations_info();
     setup_stations_data();
 
+    MPI_Barrier( comm_solver );
+
+    return;
+}
+
+/**
+ * Reads the profile layers from parameters.in - only done by PE0
+ */
+static void read_profile (  const char* parametersin ) {
+
+    static const char* fname = __FUNCTION_NAME;
+
+    int    iLayer;
+    double *auxtable;
+    FILE*  fp;
+
+    if ( (fp = fopen(parametersin, "r")) == NULL ) {
+        solver_abort(fname, parametersin, "Error opening parameters.in file\n");
+    }
+
+    if ( parsetext(fp, "number_profile_layers", 'i', &Param.theNumberOfLayers) != 0 ) {
+        solver_abort(fname, NULL, "Error reading the number of layers from %s\n", parametersin);
+    }
+
+    auxtable            = (double*)malloc(sizeof(double) * Param.theNumberOfLayers * 6);
+    Param.theProfileZ   = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+    Param.theProfileVp  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+    Param.theProfileVs  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+    Param.theProfileRho = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+    Param.theProfileQp  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+    Param.theProfileQs  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+
+    if ( (auxtable            == NULL) ||
+         (Param.theProfileZ   == NULL) ||
+         (Param.theProfileVp  == NULL) ||
+         (Param.theProfileVs  == NULL) ||
+         (Param.theProfileRho == NULL) ||
+         (Param.theProfileQp  == NULL) ||
+         (Param.theProfileQs  == NULL) ) {
+        solver_abort(fname, NULL, "Error allocating memory for the profile\n");
+    }
+
+    if ( parsedarray(fp, "profile_layers", Param.theNumberOfLayers * 6, auxtable) != 0 ) {
+        solver_abort(fname, NULL, "Error parsing the profile layers from %s\n", parametersin);
+    }
+
+    for (iLayer = 0; iLayer < Param.theNumberOfLayers; iLayer++) {
+        Param.theProfileZ  [iLayer] = auxtable[ iLayer * 6     ];
+        Param.theProfileVp [iLayer] = auxtable[ iLayer * 6 + 1 ];
+        Param.theProfileVs [iLayer] = auxtable[ iLayer * 6 + 2 ];
+        Param.theProfileRho[iLayer] = auxtable[ iLayer * 6 + 3 ];
+        Param.theProfileQp [iLayer] = auxtable[ iLayer * 6 + 4 ];
+        Param.theProfileQs [iLayer] = auxtable[ iLayer * 6 + 5 ];
+    }
+
+    return;
+}
+
+
+/**
+ * Broadcasts the profile to all other PEs
+ */
+void broadcast_profile() {
+
+    static const char* fname = __FUNCTION_NAME;
+
+    MPI_Bcast(&Param.theNumberOfLayers, 1, MPI_INT, 0, comm_solver);
+
+    if ( Global.myID != 0 ) {
+        Param.theProfileZ   = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+        Param.theProfileVp  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+        Param.theProfileVs  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+        Param.theProfileRho = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+        Param.theProfileQp  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+        Param.theProfileQs  = (double*)malloc(sizeof(double) * Param.theNumberOfLayers);
+    }
+
+    if ( Param.theProfileZ   == NULL ||
+         Param.theProfileVp  == NULL ||
+         Param.theProfileVs  == NULL ||
+         Param.theProfileRho == NULL ||
+         Param.theProfileQp  == NULL ||
+         Param.theProfileQs  == NULL ) {
+        solver_abort(fname, NULL, "Error allocating memory for the profile\n");
+    }
+
+    MPI_Barrier(comm_solver);
+
+    MPI_Bcast(Param.theProfileZ,   Param.theNumberOfLayers, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(Param.theProfileVp,  Param.theNumberOfLayers, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(Param.theProfileVs,  Param.theNumberOfLayers, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(Param.theProfileRho, Param.theNumberOfLayers, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(Param.theProfileQp,  Param.theNumberOfLayers, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(Param.theProfileQs,  Param.theNumberOfLayers, MPI_DOUBLE, 0, comm_solver);
+
+    return;
+}
+
+/**
+ * Load the velocity profile is given by the user
+ */
+void load_profile( const char* parametersin ) {
+
+    if ( Global.myID == 0 ) {
+        read_profile( parametersin );
+    }
+
+    broadcast_profile();
     MPI_Barrier( comm_solver );
 
     return;
@@ -6832,15 +7422,15 @@ load_output_parameters (const char* numericalin, output_parameters_t* params)
     fp = fopen (numericalin, "r");
 
     if (NULL == fp) {
-	solver_abort ("load_output_parameters", "fopen", "numerical.in=\"%s\"",
-		      numericalin);
+    solver_abort ("load_output_parameters", "fopen", "numerical.in=\"%s\"",
+              numericalin);
     }
 
-    params->do_output		= 0;
+    params->do_output       = 0;
     params->parallel_output     = 0;
     params->output_displacement = 0;
     params->output_velocity     = 0;
-    params->output_debug	= 0;
+    params->output_debug    = 0;
 
     params->displacement_filename = NULL;
     params->velocity_filename     = NULL;
@@ -6852,68 +7442,68 @@ load_output_parameters (const char* numericalin, output_parameters_t* params)
     ret = parsetext (fp, "output_parallel", 'i', &value);
 
     if (0 == ret && 0 != value) {
-	value = 0;
-	ret = parsetext (fp, "output_displacement", 'i', &value);
+    value = 0;
+    ret = parsetext (fp, "output_displacement", 'i', &value);
 
-	if (0 == ret && 0 != value) { /* output_displacement = 1 in config */
-	    ret = read_config_string (fp, "output_displacement_file",
-				      filename, LINESIZE);
+    if (0 == ret && 0 != value) { /* output_displacement = 1 in config */
+        ret = read_config_string (fp, "output_displacement_file",
+                      filename, LINESIZE);
 
-	    if (1 == ret && filename[0] != '\0') {
-		params->displacement_filename = strdup (filename);
-		params->output_displacement = 1;
-	    } else {
-		solver_abort ("load_output_parameters", NULL,
-			      "Output displacement file name not specified in "
-			      "numerical.in=\"%s\"",
-			      numericalin);
-	    }
-	}
+        if (1 == ret && filename[0] != '\0') {
+        params->displacement_filename = strdup (filename);
+        params->output_displacement = 1;
+        } else {
+        solver_abort ("load_output_parameters", NULL,
+                  "Output displacement file name not specified in "
+                  "numerical.in=\"%s\"",
+                  numericalin);
+        }
+    }
 
-	value = 0;
-	ret   = parsetext (fp, "output_velocity", 'i', &value);
+    value = 0;
+    ret   = parsetext (fp, "output_velocity", 'i', &value);
 
-	if (0 == ret && 0 != value) { /* output_displacement = 1 in config */
-	    ret = read_config_string (fp, "output_velocity_file",
-				      filename, LINESIZE);
+    if (0 == ret && 0 != value) { /* output_displacement = 1 in config */
+        ret = read_config_string (fp, "output_velocity_file",
+                      filename, LINESIZE);
 
-	    if (1 == ret && filename[0] != '\0') {
-		params->velocity_filename = strdup (filename);
-		params->output_velocity = 1;
-	    } else {
-		solver_abort ("load_output_parameters", NULL,
-			      "Output velocity file name not specified in "
-			      "numerical.in=\"%s\"",
-			      numericalin);
-	    }
-	}
+        if (1 == ret && filename[0] != '\0') {
+        params->velocity_filename = strdup (filename);
+        params->output_velocity = 1;
+        } else {
+        solver_abort ("load_output_parameters", NULL,
+                  "Output velocity file name not specified in "
+                  "numerical.in=\"%s\"",
+                  numericalin);
+        }
+    }
 
-	params->stats_filename = "output-stats.txt"; /* default value */
+    params->stats_filename = "output-stats.txt"; /* default value */
 
-	ret = read_config_string (fp, "output_stats_file", filename, LINESIZE);
+    ret = read_config_string (fp, "output_stats_file", filename, LINESIZE);
 
-	if (1 == ret && filename[0] != '\0') {
-	    params->stats_filename = strdup (filename);
-	}
+    if (1 == ret && filename[0] != '\0') {
+        params->stats_filename = strdup (filename);
+    }
 
-	params->debug_filename = "output-debug.txt"; /* default value */
-	ret = read_config_string (fp, "output_debug_file", filename, LINESIZE);
+    params->debug_filename = "output-debug.txt"; /* default value */
+    ret = read_config_string (fp, "output_debug_file", filename, LINESIZE);
 
-	if (1 == ret && filename[0] != '\0') {
-	    params->debug_filename = strdup (filename);
-	}
+    if (1 == ret && filename[0] != '\0') {
+        params->debug_filename = strdup (filename);
+    }
 
 
-	if (params->output_velocity || params->output_displacement) {
-	    params->do_output = 1;
-	}
+    if (params->output_velocity || params->output_displacement) {
+        params->do_output = 1;
+    }
 
-	params->parallel_output = 1;
+    params->parallel_output = 1;
 
-	ret = parsetext (fp, "output_debug", 'i', &value);
-	if (0 == ret && 0 != value) { /* output_debug = 1 in config */
-	    params->output_debug = 1;
-	}
+    ret = parsetext (fp, "output_debug", 'i', &value);
+    if (0 == ret && 0 != value) { /* output_debug = 1 in config */
+        params->output_debug = 1;
+    }
     }
 
     ret = 0;
@@ -6929,16 +7519,16 @@ load_output_parameters (const char* numericalin, output_parameters_t* params)
  * Initialize output structures, including the opening of 4D output files.
  *
  * \param numericsin Name of the file with the solver and output parameters
- *	i.e., "numerical.in".
+ *  i.e., "numerical.in".
  * \param[out] params output parameters, including filenames.
  *
  * \pre The following global variables should be initialized:
- *	- Global.myID.
- *	- Global.theGroupSize.
+ *  - Global.myID.
+ *  - Global.theGroupSize.
  *
  * \post On a successful return, the output argument \c params will be
- *	properly initialized.  If the routine fails, the state of the
- *	\c param struct is undefined.
+ *  properly initialized.  If the routine fails, the state of the
+ *  \c param struct is undefined.
  *
  * \return 0 on success, -1 on error.
  */
@@ -6955,35 +7545,35 @@ output_init_parameters (const char* numericalin, output_parameters_t* params)
     /* sanity cleanup */
     memset (params, 0, sizeof (output_parameters_t));
 
-    params->do_output		  = 0;
+    params->do_output         = 0;
     params->displacement_filename = NULL;
     params->velocity_filename     = NULL;
-    params->stats_filename	  = NULL;
+    params->stats_filename    = NULL;
 
     if (Global.myID == 0) {
-	ret = load_output_parameters (numericalin, params);
+    ret = load_output_parameters (numericalin, params);
 
-	if (0 != ret) {
-	    solver_abort ("output_init_parameters", NULL, NULL);
-	    return -1;
-	}
+    if (0 != ret) {
+        solver_abort ("output_init_parameters", NULL, NULL);
+        return -1;
+    }
     }
 
     /* parameters that can be initialized from global variables */
-    params->pe_id	   = Global.myID;
+    params->pe_id      = Global.myID;
     params->pe_count       = Global.theGroupSize;
     params->total_nodes    = Global.theNTotal;
     params->total_elements = Global.theETotal;
-    params->output_rate	   = Param.theRate;
-    params->domain_x	   = Param.theDomainX;
-    params->domain_y	   = Param.theDomainY;
-    params->domain_z	   = Param.theDomainZ;
-    params->mesh	   = Global.myMesh;
-    params->solver	   = (solver_t*)Global.mySolver;
-    params->delta_t	   = Param.theDeltaT;
+    params->output_rate    = Param.theRate;
+    params->domain_x       = Param.theDomainX;
+    params->domain_y       = Param.theDomainY;
+    params->domain_z       = Param.theDomainZ;
+    params->mesh       = Global.myMesh;
+    params->solver     = (solver_t*)Global.mySolver;
+    params->delta_t    = Param.theDeltaT;
     params->total_time_steps = Param.theTotalSteps;
 
-    output_steps	   = (Param.theTotalSteps - 1) / Param.theRate + 1;
+    output_steps       = (Param.theTotalSteps - 1) / Param.theRate + 1;
 
 
     values[0] = params->parallel_output;
@@ -6997,34 +7587,33 @@ output_init_parameters (const char* numericalin, output_parameters_t* params)
 
     params->parallel_output     = values[0];
     params->output_displacement = values[1];
-    params->output_velocity	= values[2];
-    params->output_debug	= values[3];
-    params->output_size		= (output_steps * params->total_nodes
-				   * sizeof(fvector_t) + sizeof(out_hdr_t));
+    params->output_velocity = values[2];
+    params->output_debug    = values[3];
+    params->output_size     = (output_steps * params->total_nodes
+                   * sizeof(fvector_t) + sizeof(out_hdr_t));
     Global.theNTotal = params->total_nodes;
 
 
     if (params->parallel_output) {
-	if (params->output_displacement) {
-	    broadcast_string(&params->displacement_filename, 0,comm_solver);
-	}
+    if (params->output_displacement) {
+        broadcast_string(&params->displacement_filename, 0,comm_solver);
+    }
 
-	if (params->output_velocity) {
-	    broadcast_string( &params->velocity_filename, 0, comm_solver );
-	}
+    if (params->output_velocity) {
+        broadcast_string( &params->velocity_filename, 0, comm_solver );
+    }
 
-	if (params->output_debug) {
-	    broadcast_string( &params->debug_filename, 0, comm_solver );
-	}
+    if (params->output_debug) {
+        broadcast_string( &params->debug_filename, 0, comm_solver );
+    }
 
-	/* set the expected file size */
-	Param.the4DOutSize = params->output_size;
+    /* set the expected file size */
+    Param.the4DOutSize = params->output_size;
     }
 
     return 0;
 #undef VALUES_COUNT
 }
-
 
 /**
  * Intialize parallel output structures according to config file
@@ -7047,7 +7636,7 @@ output_init( const char* numericalin, output_parameters_t* params )
     ret = output_init_parameters( numericalin, params );
 
     if (ret != 0) {
-	return -1;
+    return -1;
     }
 
     /* initialize structures, open files, etc */
@@ -7070,22 +7659,22 @@ output_get_stats( void )
 
 
     if (Param.theOutputParameters.parallel_output) {
-	ret = output_collect_io_stats( Param.theOutputParameters.stats_filename,
-				       &disp_stats, &vel_stats, Timer_Value("Total Wall Clock",0) );
+    ret = output_collect_io_stats( Param.theOutputParameters.stats_filename,
+                       &disp_stats, &vel_stats, Timer_Value("Total Wall Clock",0) );
 
-	/* magic trick so print_timing_stat() prints something sensible
-	 * for the 4D output time in the parallel case.
-	 *
-	 * if both displacement and velocity where written out, prefer
-	 * the displacement stat.
-	 */
-	if (Param.theOutputParameters.output_velocity) {
-	    avg_tput = vel_stats.tput_avg;
-	}
+    /* magic trick so print_timing_stat() prints something sensible
+     * for the 4D output time in the parallel case.
+     *
+     * if both displacement and velocity where written out, prefer
+     * the displacement stat.
+     */
+    if (Param.theOutputParameters.output_velocity) {
+        avg_tput = vel_stats.tput_avg;
+    }
 
-	if (Param.theOutputParameters.output_displacement) {
-	    avg_tput = disp_stats.tput_avg;
-	}
+    if (Param.theOutputParameters.output_displacement) {
+        avg_tput = disp_stats.tput_avg;
+    }
     }
 
     return ret;
@@ -7107,25 +7696,29 @@ mesh_correct_properties( etree_t* cvm )
     edata_t* edata;
     int32_t  eindex;
     double   east_m, north_m, depth_m, VpVsRatio, RhoVpRatio;
-    int	     res, iNorth, iEast, iDepth, numPoints = 3;
-    double   vs, vp, rho;
+    int      res, iNorth, iEast, iDepth, numPoints = 3, cnt=0;
+    double   vs, vp, rho, s_0, qp, qs;
     double   points[3];
     int32_t  lnid0;
+    vector3D_t Istmatmodel_origin;
 
-    // INTRODUCE BKT MODEL
-
-    double Qs, Qp, Qk, L, vs_vp_Ratio, vksquared, w;
-    int index_Qs, index_Qk;
-    int QTable_Size = (int)(sizeof(Global.theQTABLE)/( 6 * sizeof(double)));
+    double Qs, Qp, Qk, L;
 
     points[0] = 0.005;
     points[1] = 0.5;
     points[2] = 0.995;
 
-//    if (Global.myID == 0) {
-//        fprintf( stdout,"mesh_correct_properties  ... " );
-//        fflush( stdout );
-//    }
+    if ( Param.IstanbulMaterialModel == YES ) {
+        Istmatmodel_origin = compute_domain_coords_linearinterp(28.675,40.9565,
+                                        Param.theSurfaceCornersLong,
+                                        Param.theSurfaceCornersLat,
+                                        Param.theDomainY,Param.theDomainX);
+    }
+
+    if (Global.myID == 0) {
+        fprintf( stdout,"mesh_correct_properties  ... " );
+        fflush( stdout );
+    }
 
     /* iterate over mesh elements */
     for (eindex = 0; eindex < Global.myMesh->lenum; eindex++) {
@@ -7133,6 +7726,13 @@ mesh_correct_properties( etree_t* cvm )
         elemp = &Global.myMesh->elemTable[eindex];
         edata = (edata_t*)elemp->data;
         lnid0 = Global.myMesh->elemTable[eindex].lnid[0];
+
+        if ( Param.includeTopography == YES ) {
+            if( topo_correctproperties( edata ) ) {
+                continue;
+            }
+        }
+
 
         if ( Param.includeBuildings == YES ) {
             if( bldgs_correctproperties( Global.myMesh, edata, lnid0) ) {
@@ -7143,61 +7743,175 @@ mesh_correct_properties( etree_t* cvm )
         vp  = 0;
         vs  = 0;
         rho = 0;
+        cnt = 0;
+        s_0 = 0;
+        qp  = 0;
+        qs  = 0;
 
         for (iNorth = 0; iNorth < numPoints; iNorth++) {
 
-        	north_m = (Global.myMesh->ticksize) * (double)Global.myMesh->nodeTable[lnid0].x
-        			+ edata->edgesize * points[iNorth] + Global.theXForMeshOrigin ;
+            north_m = (Global.myMesh->ticksize) * (double)Global.myMesh->nodeTable[lnid0].x
+                    + edata->edgesize * points[iNorth] + Global.theXForMeshOrigin ;
 
-        	for (iEast = 0; iEast < numPoints; iEast++) {
+            for (iEast = 0; iEast < numPoints; iEast++) {
 
-        		east_m = ( (Global.myMesh->ticksize)
-        				* (double)Global.myMesh->nodeTable[lnid0].y
-        				+ edata->edgesize * points[iEast] + Global.theYForMeshOrigin  );
+                east_m = ( (Global.myMesh->ticksize)
+                        * (double)Global.myMesh->nodeTable[lnid0].y
+                        + edata->edgesize * points[iEast] + Global.theYForMeshOrigin  );
 
-        		for (iDepth = 0; iDepth < numPoints; iDepth++) {
-        			cvmpayload_t g_props; /* ground properties record */
+                for (iDepth = 0; iDepth < numPoints; iDepth++) {
+                    cvmpayload_t g_props; /* ground properties record */
 
-        			depth_m = ( (Global.myMesh->ticksize)
-        					* (double)Global.myMesh->nodeTable[lnid0].z
-        					+ edata->edgesize * points[iDepth] + Global.theZForMeshOrigin );
+                    depth_m = ( (Global.myMesh->ticksize)
+                            * (double)Global.myMesh->nodeTable[lnid0].z
+                            + edata->edgesize * points[iDepth] + Global.theZForMeshOrigin );
 
-        			/* NOTE: If you want to see the carving process,
-        			 *       activate this and comment the query below */
-        			if ( Param.includeBuildings == YES ) {
-        				//                        if ( depth_m < get_surface_shift() ) {
-        				//                            g_props.Vp  = NAN;
-        				//                            g_props.Vs  = NAN;
-        				//                            g_props.rho = NAN;
-        				//                        } else {
-        				depth_m -= get_surface_shift();
-        				//                            res = cvm_query( Global.theCVMEp, east_m, north_m,
-        				//                                             depth_m, &g_props );
-        				//                        }
-        			}
+                    /* NOTE: If you want to see the carving process,
+                     *       activate this and comment the query below */
+                    if ( Param.includeBuildings == YES ) {
+                        depth_m -= get_surface_shift();
+                    }
 
-        			res = cvm_query( Global.theCVMEp, east_m, north_m,
-        					depth_m, &g_props );
+                    if ( ( Param.includeTopography == YES ) && ( get_theetree_type() == SQD )  ) {
+                                depth_m -=  point_elevation ( north_m, east_m ) ;
+                                if ( depth_m < 0 )
+                                    continue;
 
-        			if (res != 0) {
-        				fprintf(stderr, "Cannot find the query point\n");
-        				exit(1);
-        			}
+                                if ( depth_m > Param.theDomainZ )
+                                    depth_m = Param.theDomainZ - edata->edgesize * 0.005;
 
-        			vp  += g_props.Vp;
-        			vs  += g_props.Vs;
-        			rho += g_props.rho;
+                    }
+
+                    if ( belongs2hmgHalfspace( east_m, north_m, depth_m ) )
+                        res = get_halfspaceproperties( &g_props );
+                    else if ( Param.IstanbulMaterialModel == YES ) {
+
+                        double output[4]={0.0}, x_rel, y_rel;
+
+                        x_rel = 4536400.00 + north_m - Istmatmodel_origin.x[0];
+                        y_rel =  388500.00 + east_m  - Istmatmodel_origin.x[1];
+
+                        res = material_property_relative_V10_local( y_rel, x_rel, -depth_m, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
+                        g_props.Qs  = output[0] * 0.1; // Same simple expression as in la Habra runs
+                        g_props.Qp  = 2.0 * g_props.Qs;
+
+                        if (res != 0) {
+                            if (Param.useProfile == NO)
+                                res = cvm_query( Global.theCVMEp, east_m, north_m, depth_m, &g_props );
+                            else
+                                res = profile_query(depth_m, &g_props);
+                        } else {
+                            g_props.Vs  = output[0];
+                            g_props.Vp  = output[1];
+                            g_props.rho = output[2];
+                        }
+
+                    } else if (Param.useProfile == NO) {
+                        res = cvm_query( Global.theCVMEp, east_m, north_m, depth_m, &g_props );
+                    } else {
+                        res = profile_query(depth_m, &g_props);
+                    }
+
+
+                    if (res != 0) {
+                        fprintf(stderr, "Cannot find the query point: east = %lf, north = %lf, depth = %lf \n",
+                                east_m, north_m, depth_m);
+                        exit(1);
+                    }
+
+                    vp  += g_props.Vp;
+                    vs  += g_props.Vs;
+                    rho += g_props.rho;
+                    qp  += g_props.Qp;
+                    qs  += g_props.Qs;
+                    ++cnt;
+
+                    // get geostatic stress as 1d column
+                    double nlayers=100, depth_o = (depth_m - edata->edgesize/2.0) /nlayers, depth_k;
+                    int    k;
+                    if (iNorth == 1 && iEast == 1 && iDepth ==1 && Param.includeNonlinearAnalysis == YES ) {
+
+                        // get nonlinear_id at the elment's center
+                        double output[4]={0.0}, x_rel, y_rel;
+                        x_rel = 4536400.00 + north_m - Istmatmodel_origin.x[0];
+                        y_rel =  388500.00 + east_m  - Istmatmodel_origin.x[1];
+
+                        res = material_property_relative_V10_local( y_rel, x_rel, -depth_m, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
+
+                        edata->nl_id = output[3];
+
+
+                        s_0 = edata->edgesize/2.0 * edata->rho * 9.81;
+                        for (k = 0; k < nlayers; k++) {
+
+                            depth_k = depth_o * (k + 0.5);
+
+                            if ( belongs2hmgHalfspace( east_m, north_m, depth_m ) )
+                                res = get_halfspaceproperties( &g_props );
+
+                            else if ( Param.IstanbulMaterialModel == YES ) {
+
+                                x_rel = 4536400.00 + north_m - Istmatmodel_origin.x[0];
+                                y_rel =  388500.00 + east_m  - Istmatmodel_origin.x[1];
+
+                                res = material_property_relative_V10_local( y_rel, x_rel, -depth_k, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
+
+                                if (res != 0) {
+                                    if (Param.useProfile == NO) {
+                                        res = cvm_query( Global.theCVMEp, east_m, north_m, depth_k, &g_props );
+                                    } else {
+                                        res = profile_query(depth_k, &g_props);
+                                    }
+                                } else {
+                                    g_props.Vs  = output[0];
+                                    g_props.Vp  = output[1];
+                                    g_props.rho = output[2];
+                                }
+
+                            } else if (Param.useProfile == NO) {
+                                res = cvm_query( Global.theCVMEp, east_m, north_m, depth_k, &g_props );
+                            } else {
+                                res = profile_query(depth_k, &g_props);
+                            }
+
+                            s_0 += depth_o * g_props.rho * 9.81;
+                        }
+
+                        edata->sigma_0 = s_0;
+                    }
                 }
             }
         }
 
-        edata->Vp  =  vp / 27;
-        edata->Vs  =  vs / 27;
-        edata->rho = rho / 27;
+        edata->Vp  =  vp;
+        edata->Vs  =  vs;
+        edata->rho = rho;
+        //edata->Qp  = qp;
+        //edata->Qs  = qs;
+
+        if (cnt != 0 ) {
+            edata->Vp  =  vp / cnt;
+            edata->Vs  =  vs / cnt;
+            edata->rho = rho / cnt;
+            qp  = qp / cnt;
+            qs  = qs / cnt;
+
+            //edata->Qp  = qp / cnt;
+            //edata->Qs  = qs / cnt;
+        }
 
         /* Auxiliary ratios for adjustments */
         VpVsRatio  = edata->Vp  / edata->Vs;
         RhoVpRatio = edata->rho / edata->Vp;
+
+        // Doriam says: Adjust minimum value as in La Habra project
+        if ( VpVsRatio <= 1.453 )
+            VpVsRatio = 1.453;   // makes nu=0.05
+
+        if ( VpVsRatio > Param.theThresholdVpVs   )
+            VpVsRatio = Param.theThresholdVpVs ;
+
+        edata->Vp = VpVsRatio * edata->Vs;
 
         /* Adjust material properties according to the element size and
          * softening factor.
@@ -7225,107 +7939,323 @@ mesh_correct_properties( etree_t* cvm )
         /* Readjust Vs, Vp and Density according to VsCut */
         if ( edata->Vs < Param.theVsCut ) {
             edata->Vs  = Param.theVsCut;
-            edata->Vp  = Param.theVsCut  * VpVsRatio;
+            edata->Vp  = Param.theVsCut * VpVsRatio;
             /* edata->rho = edata->Vp * RhoVpRatio; */ /* Discuss with Jacobo */
         }
 
-
-        // IMPLEMENT BKT MODEL
-
-        /* CALCULATE QUALITY FACTOR VALUES AND READ CORRESPONDING VISCOELASTICITY COEFFICIENTS FROM THE TABLE */
-
-        	/* L IS THE COEFFICIENT DEFINED BY "SHEARER-2009" TO RELATE QK, QS AND QP */
-
-        if(Param.theTypeOfDamping == BKT)
+        /*
+         * Definition of BTK-Family Damping parameters
+         */
+        if( Param.theTypeOfDamping >= BKT )
         {
+            double vs_vp_Ratio, vksquared;
+            double vs_kms = edata->Vs * 0.001; /* Vs in km/s */
 
             vksquared = edata->Vp * edata->Vp - 4. / 3. * edata->Vs * edata->Vs;
-        	vs_vp_Ratio = edata->Vs / edata->Vp;
-        	vs = edata->Vs * 0.001;
-        	L = 4. / 3. * vs_vp_Ratio * vs_vp_Ratio;
 
-          	//Qs = 0.02 * edata->Vs;
+            vs_vp_Ratio = edata->Vs / edata->Vp;
+            L = 4. / 3. * vs_vp_Ratio * vs_vp_Ratio; /* As defined in Shearer (2009) */
 
-        	// Ricardo's Formula based on Brocher's paper (2008) on the subject. In the paper Qp = 2*Qs is given.
-        	//TODO : Make sure Qp Qs relation is correct...
+            if ( Param.useParametricQ == YES ) {
 
-        	Qs = 10.5 + vs * (-16. + vs * (153. + vs * (-103. + vs * (34.7 + vs * (-5.29 + vs * 0.31)))));
-        	Qp = 2. * Qs;
+                /* Use of the formula
+                 *
+                 * Qs = C + QAlpha * ( Vs ^ (QBeta) )
+                 *
+                 * This formula was introduce by Ricardo and Naeem
+                 * and it is versatile enough and simpler than the
+                 * option used in Taborda and Bielak (2013, BSSA)
+                 */
+                    Qs = Param.theQConstant + Param.theQAlpha * pow(vs_kms,Param.theQBeta);
 
-        	if (Param.useInfQk == YES) {
-        	    Qk = 1000;
-        	} else {
+            } else {
+
+                /* Use of the formula introduced by Ricardo in the
+                 * paper Taborda and Bielak (2013, BSSA) which is
+                 * based on the idea of Brocher (2005)
+                 */
+                if ( Param.useProfile == YES )
+                    Qs = qs;
+                else
+                    Qs = 10.5 + vs_kms * (-16. + vs_kms * (153. + vs_kms * (-103. + vs_kms * (34.7 + vs_kms * (-5.29 + vs_kms * 0.31)))));
+            }
+
+            /* Default option for Qp */
+            if ( Param.useProfile == YES )
+                Qp = qp;
+            else
+                Qp = 2. * Qs;
+
+            //edata->Qs = Qs;  // update Qs and Qp
+            //edata->Qp = Qp;
+
+            if (Param.useInfQk == YES) {
+                Qk = 1000;
+            } else {
                 Qk = (1. - L) / (1. / Qp - L / Qs);
-        	}
+            }
 
-        	index_Qs = Search_Quality_Table(Qs, &(Global.theQTABLE[0][0]), QTable_Size);
+            if ( Param.theTypeOfDamping == BKT ) {
 
-//        	printf("Quality Factor Table\n Qs : %lf \n Vs : %lf\n",Qs,edata->Vs);
+                /* Legacy implementation of original BKT
+                 * model using a table to set parameters
+                 */
 
-        	if(index_Qs == -2 || index_Qs >= QTable_Size)
-        	{
-        		fprintf(stderr,"Problem with the Quality Factor Table\n Qs : %lf \n Vs : %lf\n",Qs,edata->Vs);
-        		exit(1);
-        	}
-        	else if(index_Qs == -1)
-        	{
-        		edata->a0_shear = 0;
-        		edata->a1_shear = 0;
-        		edata->g0_shear = 0;
-        		edata->g1_shear = 0;
-        		edata->b_shear  = 0;
-        	}
-        	else
-        	{
-        		edata->a0_shear = Global.theQTABLE[index_Qs][1];
-        		edata->a1_shear = Global.theQTABLE[index_Qs][2];
-        		edata->g0_shear = Global.theQTABLE[index_Qs][3];
-        		edata->g1_shear = Global.theQTABLE[index_Qs][4];
-        		edata->b_shear  = Global.theQTABLE[index_Qs][5];
-        	}
+                int index_Qs, index_Qk;
+                int QTable_Size = (int)(sizeof(Global.theQTABLE)/( 6 * sizeof(double)));
 
-        	index_Qk = Search_Quality_Table(Qk, &(Global.theQTABLE[0][0]), QTable_Size);
+                index_Qs = Search_Quality_Table(Qs, &(Global.theQTABLE[0][0]), QTable_Size);
+                index_Qk = Search_Quality_Table(Qk, &(Global.theQTABLE[0][0]), QTable_Size);
 
-//        	printf("Quality Factor Table\n Qs : %lf \n Vs : %lf\n",Qs,edata->Vs);
+                if ( (index_Qs == -2) || (index_Qs >= QTable_Size) ||
+                     (index_Qk == -2) || (index_Qk >= QTable_Size) ) {
+                    solver_abort( __FUNCTION_NAME, NULL, "Unexpected damping type: %d\n", Param.theTypeOfDamping);
+                }
 
-        	if(index_Qk == -2 || index_Qk >= QTable_Size)
-        	{
-        		fprintf(stderr,"Problem with the Quality Factor Table\n Qk : %lf \n Vs : %lf\n",Qk,edata->Vs);
-        		exit(1);
-        	}
-        	else if(index_Qk == -1)
-        	{
-        		edata->a0_kappa = 0;
-        		edata->a1_kappa = 0;
-        		edata->g0_kappa = 0;
-        		edata->g1_kappa = 0;
-        		edata->b_kappa  = 0;
-        	}
-        	else
-        	{
-        		edata->a0_kappa = Global.theQTABLE[index_Qk][1];
-        		edata->a1_kappa = Global.theQTABLE[index_Qk][2];
-        		edata->g0_kappa = Global.theQTABLE[index_Qk][3];
-        		edata->g1_kappa = Global.theQTABLE[index_Qk][4];
-        		edata->b_kappa  = Global.theQTABLE[index_Qk][5];
-        	}
+                if ( index_Qs == -1 ) {
+                    edata->a0_shear = 0;
+                    edata->a1_shear = 0;
+                    edata->g0_shear = 0;
+                    edata->g1_shear = 0;
+                    edata->b_shear  = 0;
+                } else {
+                    edata->a0_shear = Global.theQTABLE[index_Qs][1];
+                    edata->a1_shear = Global.theQTABLE[index_Qs][2];
+                    edata->g0_shear = Global.theQTABLE[index_Qs][3];
+                    edata->g1_shear = Global.theQTABLE[index_Qs][4];
+                    edata->b_shear  = Global.theQTABLE[index_Qs][5];
+                }
 
-        	if(Param.theFreq_Vel != 0.)
-        	{
-        		w = Param.theFreq_Vel / Param.theFreq;
+                if ( (Param.useInfQk == YES) || (index_Qk == -1) ) {
+                    edata->a0_kappa = 0;
+                    edata->a1_kappa = 0;
+                    edata->g0_kappa = 0;
+                    edata->g1_kappa = 0;
+                    edata->b_kappa  = 0;
+                } else {
+                    edata->a0_kappa = Global.theQTABLE[index_Qk][1];
+                    edata->a1_kappa = Global.theQTABLE[index_Qk][2];
+                    edata->g0_kappa = Global.theQTABLE[index_Qk][3];
+                    edata->g1_kappa = Global.theQTABLE[index_Qk][4];
+                    edata->b_kappa  = Global.theQTABLE[index_Qk][5];
+                }
 
-        		if ( (edata->a0_shear != 0) && (edata->a1_shear != 0) ) {
-        		    double shear_vel_corr_factor;
-        		    shear_vel_corr_factor = sqrt(1. - (edata->a0_shear * edata->g0_shear * edata->g0_shear / (edata->g0_shear * edata->g0_shear + w * w) + edata->a1_shear * edata->g1_shear * edata->g1_shear / (edata->g1_shear * edata->g1_shear + w * w)));
-                    edata->Vs = shear_vel_corr_factor * edata->Vs;
-        		}
+            } else if ( Param.theTypeOfDamping == BKT2 ) {
 
-        		if ( (edata->a0_kappa != 0) && (edata->a0_kappa != 0) ) {
-        		    double kappa_vel_corr_factor;
-        		    kappa_vel_corr_factor = sqrt(1. - (edata->a0_kappa * edata->g0_kappa * edata->g0_kappa / (edata->g0_kappa * edata->g0_kappa + w * w) + edata->a1_kappa * edata->g1_kappa * edata->g1_kappa / (edata->g1_kappa * edata->g1_kappa + w * w)));
-                    edata->Vp = sqrt(kappa_vel_corr_factor * kappa_vel_corr_factor * vksquared + 4. / 3. * edata->Vs * edata->Vs);
-        		}
-        	}
+                /* Notes:
+                 * g = normilized_gamma * ( 2 * pi * f_max);
+                 * b = normilized_beta / (Q * 2 * pi * f_max);
+                 */
+                 if ( Qs >= 1000 ) {
+                    edata->g0_shear = 0;
+                    edata->g1_shear = 0;
+                    edata->a0_shear = 0;
+                    edata->a1_shear = 0;
+                    edata->b_shear  = 0;
+                } else {
+                    //Doriam: Ricardo's functions
+                    /* edata->g0_shear =   0.0373 * (2. * M_PI * Param.theFreq);
+                    edata->g1_shear =   0.3082 * (2. * M_PI * Param.theFreq);
+                    edata->a0_shear = (-2.656  * pow(Qs, -0.8788) + 1.677 ) / Qs;
+                    edata->a1_shear = (-0.5623 * pow(Qs, -1.0300) + 1.262 ) / Qs;
+                    edata->b_shear  = ( 0.1876 * pow(Qs, -0.9196) + 0.6137) / (Qs * (2. * M_PI * Param.theFreq)); */
+
+                    // Doriam: All parameters free
+                    /* edata->g0_shear = ( 0.008634 * pow(Qs, -0.07081) + 0.04408) * (2. * M_PI * Param.theFreq);
+                    edata->g1_shear = ( 0.08366 * pow(Qs, -0.1043) + 0.3487) * (2. * M_PI * Param.theFreq);
+                    edata->a0_shear = ( 1.042  * pow(Qs, -0.9077) ) ;
+                    edata->a1_shear = ( 1.056 * pow(Qs, -0.9718) ) ;
+                    edata->b_shear  = ( 0.5711 * pow(Qs, -1.0) ) / ( (2. * M_PI * Param.theFreq)); */
+
+                    // Doriam: Gamma parameters fixed
+                    edata->g0_shear = 0.05 * (2. * M_PI * Param.theFreq);
+                    edata->g1_shear = 0.40 * (2. * M_PI * Param.theFreq);
+                    edata->a0_shear = ( 1.056  * pow(Qs, -0.9068) ) ;
+                    edata->a1_shear = ( 1.078 * pow(Qs, -0.9797) ) ;
+                    edata->b_shear  = ( 0.5709 * pow(Qs, -1.021) ) / ( (2. * M_PI * Param.theFreq));
+
+                }
+
+                if ( ( Param.useInfQk == YES ) || ( Qk >= 1000 ) ) {
+                    edata->g0_kappa = 0;
+                    edata->g1_kappa = 0;
+                    edata->a0_kappa = 0;
+                    edata->a1_kappa = 0;
+                    edata->b_kappa  = 0;
+                } else {
+                    // Doriam: Ricardo's functions
+                    /* edata->g0_kappa =   0.0373 * (2. * M_PI * Param.theFreq);
+                    edata->g1_kappa =   0.3082 * (2. * M_PI * Param.theFreq);
+                    edata->a0_kappa = (-2.656  * pow(Qk, -0.8788) + 1.677 ) / Qk;
+                    edata->a1_kappa = (-0.5623 * pow(Qk, -1.0300) + 1.262 ) / Qk;
+                    edata->b_kappa  = ( 0.1876 * pow(Qk, -0.9196) + 0.6137) / (Qk * (2. * M_PI * Param.theFreq)); */
+
+                    // Doriam: All parameters free
+                    /* edata->g0_kappa = ( 0.008634 * pow(Qk, -0.07081) + 0.04408 ) * (2. * M_PI * Param.theFreq);
+                    edata->g1_kappa = ( 0.08366 * pow(Qk, -0.1043) + 0.3487 ) * (2. * M_PI * Param.theFreq);
+                    edata->a0_kappa = ( 1.042  * pow(Qk, -0.9077) );
+                    edata->a1_kappa = ( 1.056 * pow(Qk, -0.9718) );
+                    edata->b_kappa  = ( 0.5711 * pow(Qk, -1.0) ) / ( (2. * M_PI * Param.theFreq)); */
+
+                    // Doriam: Gamma parameters fixed
+                    edata->g0_kappa = 0.05 * (2. * M_PI * Param.theFreq);
+                    edata->g1_kappa = 0.40 * (2. * M_PI * Param.theFreq);
+                    edata->a0_kappa = ( 1.056  * pow(Qk, -0.9068) ) ;
+                    edata->a1_kappa = ( 1.078 * pow(Qk, -0.9797) ) ;
+                    edata->b_kappa  = ( 0.5709 * pow(Qk, -1.021) ) / ( (2. * M_PI * Param.theFreq));
+
+                }
+
+            } else if ( Param.theTypeOfDamping == BKT3 ) {
+
+                 if ( Qs >= 1000 ) {
+                    edata->g0_shear = 0;
+                    edata->g1_shear = 0;
+                    edata->g2_shear = 0;
+                    edata->a0_shear = 0;
+                    edata->a1_shear = 0;
+                    edata->a2_shear = 0;
+                    edata->b_shear  = 0;
+                } else {
+                    // Doriam: Ricardo's functions
+                    /* edata->g0_shear =   0.0151 * (2. * M_PI * Param.theFreq);
+                    edata->g1_shear =   0.1000 * (2. * M_PI * Param.theFreq);
+                    edata->g2_shear =   0.4814 * (2. * M_PI * Param.theFreq);
+                    edata->a0_shear = (-2.723  * pow(Qs, -0.8206) + 1.601 ) / Qs;
+                    edata->a1_shear = (-1.439  * pow(Qs, -0.9668) + 1.04  ) / Qs;
+                    edata->a2_shear = (-0.3037 * pow(Qs, -0.8911) + 1.032 ) / Qs;
+                    edata->b_shear  = ( 0.1249 * pow(Qs, -0.804 ) + 0.4782) / (Qs * (2. * M_PI * Param.theFreq)); */
+
+                    // Doriam: Updated fitting. Gamma Fixed
+                    edata->g0_shear =   0.0270 * (2. * M_PI * Param.theFreq);
+                    edata->g1_shear =   0.5900 * (2. * M_PI * Param.theFreq);
+                    edata->g2_shear =   0.1400 * (2. * M_PI * Param.theFreq);
+                    edata->a0_shear = (0.8543  * pow(Qs, -0.8953) );
+                    edata->a1_shear = (0.8871  * pow(Qs, -0.9803) );
+                    edata->a2_shear = (0.6718 * pow(Qs, -0.9412) );
+                    edata->b_shear  = ( 0.446 * pow(Qs, -1.017 ) ) / ( (2. * M_PI * Param.theFreq) );
+
+                }
+
+                if ( ( Param.useInfQk == YES ) || ( Qk >= 1000 ) ) {
+                    edata->g0_kappa = 0;
+                    edata->g1_kappa = 0;
+                    edata->g2_kappa = 0;
+                    edata->a0_kappa = 0;
+                    edata->a1_kappa = 0;
+                    edata->a2_kappa = 0;
+                    edata->b_kappa  = 0;
+                } else {
+                    // Doriam: Ricardo's functions
+                    /* edata->g0_kappa =   0.0151 * (2. * M_PI * Param.theFreq);
+                    edata->g1_kappa =   0.1000 * (2. * M_PI * Param.theFreq);
+                    edata->g2_kappa =   0.4814 * (2. * M_PI * Param.theFreq);
+                    edata->a0_kappa = (-2.723  * pow(Qk, -0.8206) + 1.601 ) / Qk;
+                    edata->a1_kappa = (-1.439  * pow(Qk, -0.9668) + 1.04  ) / Qk;
+                    edata->a2_kappa = (-0.3037 * pow(Qk, -0.8911) + 1.032 ) / Qk;
+                    edata->b_kappa  = ( 0.1249 * pow(Qk, -0.804 ) + 0.4782) / (Qk * (2. * M_PI * Param.theFreq)); */
+
+                    // Doriam: Updated fitting. Gamma Fixed
+                    edata->g0_kappa =  0.0270 * (2. * M_PI * Param.theFreq);
+                    edata->g1_kappa =  0.5900 * (2. * M_PI * Param.theFreq);
+                    edata->g2_kappa =  0.1400 * (2. * M_PI * Param.theFreq);
+
+                    edata->a0_kappa =  ( 0.8543  * pow(Qk, -0.8953) );
+                    edata->a1_kappa =  ( 0.8871  * pow(Qk, -0.9803) );
+                    edata->a2_kappa =  ( 0.6718 * pow(Qk, -0.9412) );
+                    edata->b_kappa  =  ( 0.446 * pow(Qk, -1.017 ) ) / ( (2. * M_PI * Param.theFreq));
+
+                }
+
+            } else if ( Param.theTypeOfDamping == BKT3F ) {
+
+                /*
+                 * Temporal Implementation of frequency dependent Q with:
+                 * exponent = 0.8
+                 * f_max = 10 Hz (fixed)
+                 * f_o = 0.1 f_max = 1 Hz (fixed)
+                 */
+
+                if ( Qs >= 1000 ) {
+                    edata->g0_shear = 0;
+                    edata->g1_shear = 0;
+                    edata->g2_shear = 0;
+                    edata->a0_shear = 0;
+                    edata->a1_shear = 0;
+                    edata->a2_shear = 0;
+                    edata->b_shear  = 0;
+                } else {
+                    edata->g0_shear =   0.002  * (2. * M_PI * 10);
+                    edata->g1_shear =   0.0116 * (2. * M_PI * 10);
+                    edata->g2_shear =   0.0798 * (2. * M_PI * 10);
+                    edata->a0_shear = (-2.809  * pow(Qs, -0.7919) + 1.512 ) / Qs;
+                    edata->a1_shear = (-1.748  * pow(Qs, -0.882 ) + 1.064 ) / Qs;
+                    edata->a2_shear = (-2.358  * pow(Qs, -1.725 ) + 1.581 ) / Qs;
+                    edata->b_shear  = ( 0.09232* pow(Qs, -0.8876) + 0.006941) / (Qs * (2. * M_PI * 10));
+                }
+
+                if ( ( Param.useInfQk == YES ) || ( Qk >= 1000 ) ) {
+                    edata->g0_kappa = 0;
+                    edata->g1_kappa = 0;
+                    edata->g2_kappa = 0;
+                    edata->a0_kappa = 0;
+                    edata->a1_kappa = 0;
+                    edata->a2_kappa = 0;
+                    edata->b_kappa  = 0;
+                } else {
+                    edata->g0_kappa =   0.002  * (2. * M_PI * 10);
+                    edata->g1_kappa =   0.0116 * (2. * M_PI * 10);
+                    edata->g2_kappa =   0.0798 * (2. * M_PI * 10);
+                    edata->a0_kappa = (-2.809  * pow(Qk, -0.7919) + 1.512 ) / Qk;
+                    edata->a1_kappa = (-1.748  * pow(Qk, -0.882 ) + 1.064 ) / Qk;
+                    edata->a2_kappa = (-2.358  * pow(Qk, -1.725 ) + 1.581 ) / Qk;
+                    edata->b_kappa  = ( 0.09232* pow(Qk, -0.8876) + 0.006941) / (Qk * (2. * M_PI * 10));
+                }
+
+            } else {
+                /* Should never reach this point */
+                solver_abort( __FUNCTION_NAME, NULL, "Unexpected damping type: %d\n", Param.theTypeOfDamping);
+            }
+
+            /*
+             * Phase velocity adjustment
+             */
+            if(Param.theFreq_Vel != 0.) {
+                double w, w2;
+                double shear_vel_corr_factor = 1.0;
+                double kappa_vel_corr_factor = 1.0;
+
+                w = Param.theFreq_Vel / Param.theFreq;
+                w2 = w * w;
+
+                if ( (Param.theTypeOfDamping == BKT) || (Param.theTypeOfDamping == BKT2) ) {
+                    if ( (edata->a0_shear != 0) && (edata->a1_shear != 0) ) {
+                        shear_vel_corr_factor = sqrt(1. - (   edata->a0_shear * edata->g0_shear * edata->g0_shear / (edata->g0_shear * edata->g0_shear + w2)
+                                                            + edata->a1_shear * edata->g1_shear * edata->g1_shear / (edata->g1_shear * edata->g1_shear + w2) ) );
+                    }
+                    if ( (edata->a0_kappa != 0) && (edata->a1_kappa != 0) ) {
+                        kappa_vel_corr_factor = sqrt(1. - (   edata->a0_kappa * edata->g0_kappa * edata->g0_kappa / (edata->g0_kappa * edata->g0_kappa + w2)
+                                                            + edata->a1_kappa * edata->g1_kappa * edata->g1_kappa / (edata->g1_kappa * edata->g1_kappa + w2) ) );
+                    }
+                } else if ( (Param.theTypeOfDamping == BKT3) || (Param.theTypeOfDamping == BKT3F) ) {
+                    if ( (edata->a0_shear != 0) && (edata->a1_shear != 0) && (edata->a2_shear != 0) ) {
+                        shear_vel_corr_factor = sqrt(1. - (   edata->a0_shear * edata->g0_shear * edata->g0_shear / (edata->g0_shear * edata->g0_shear + w2)
+                                                            + edata->a1_shear * edata->g1_shear * edata->g1_shear / (edata->g1_shear * edata->g1_shear + w2)
+                                                            + edata->a2_shear * edata->g2_shear * edata->g2_shear / (edata->g2_shear * edata->g2_shear + w2) ) );
+                    }
+                    if ( (edata->a0_kappa != 0) && (edata->a1_kappa != 0) && (edata->a2_kappa != 0) ) {
+                        kappa_vel_corr_factor = sqrt(1. - (   edata->a0_kappa * edata->g0_kappa * edata->g0_kappa / (edata->g0_kappa * edata->g0_kappa + w2)
+                                                            + edata->a1_kappa * edata->g1_kappa * edata->g1_kappa / (edata->g1_kappa * edata->g1_kappa + w2)
+                                                            + edata->a2_kappa * edata->g2_kappa * edata->g2_kappa / (edata->g2_kappa * edata->g2_kappa + w2) ) );
+                    }
+                } else {
+                    /* Should never reach this point */
+                    solver_abort( __FUNCTION_NAME, NULL, "Unexpected damping type: %d\n", Param.theTypeOfDamping);
+                }
+
+                edata->Vs = shear_vel_corr_factor * edata->Vs;
+                edata->Vp = sqrt(kappa_vel_corr_factor * kappa_vel_corr_factor * vksquared + 4. / 3. * edata->Vs * edata->Vs);
+            }
         }
     }
 }
@@ -7397,8 +8327,21 @@ int main( int argc, char** argv )
     /* Read input parameters from file */
     read_parameters(argc, argv);
 
-    /* Create and open database */
-    open_cvmdb();
+    if ( Param.useProfile == YES ) {
+
+        /* Read profile to memory */
+        load_profile( Param.parameters_input_file );
+
+    } else {
+
+        /* Create and open database */
+        open_cvmdb();
+    }
+
+    /* Initialize Istanbul material model */
+    if ( Param.IstanbulMaterialModel == YES ) {
+        Istanbul_init ( Global.myID );
+    }
 
     /* Initialize nonlinear parameters */
     if ( Param.includeNonlinearAnalysis == YES ) {
@@ -7410,10 +8353,30 @@ int main( int argc, char** argv )
     }
 
     if ( Param.drmImplement == YES ){
-    	Timer_Start("Init Drm Parameters");
-    	Param.theDrmPart = drm_init(Global.myID, Param.parameters_input_file , Param.includeBuildings);
-    	Timer_Stop("Init Drm Parameters");
-    	Timer_Reduce("Init Drm Parameters", MAX | MIN | AVERAGE , comm_solver);
+        Timer_Start("Init Drm Parameters");
+        Param.theDrmPart = drm_init(Global.myID, Param.parameters_input_file , Param.includeBuildings);
+        Timer_Stop("Init Drm Parameters");
+        Timer_Reduce("Init Drm Parameters", MAX | MIN | AVERAGE , comm_solver);
+    }
+
+    if ( Param.includeTopography == YES ){
+        topo_init( Global.myID, Param.parameters_input_file );
+    }
+
+    if ( Param.includeIncidentPlaneWaves == YES ){
+
+        /* compute half-space Vs */
+/*      cvmpayload_t props;
+        int res = cvm_query( Global.theCVMEp, Param.theDomainY / 2.0, Param.theDomainX / 2.0, Param.theDomainZ, &props );
+        double VsHS = props.Vs;*/
+
+        drm_planewaves_init( Global.myID, Param.parameters_input_file );
+
+    }
+
+    if ( Param.includeHomogeneousHalfSpace == YES ){
+        /* compute half-space Vs */
+        hmgHalfspace_init( Global.myID, Param.parameters_input_file );
     }
 
     // INTRODUCE BKT MODEL
@@ -7431,22 +8394,27 @@ int main( int argc, char** argv )
     }
 
     if ( Param.drmImplement == YES ) {
-    	Timer_Start("Drm Init");
-    	if ( Param.theDrmPart == PART0 ) {
-    		find_drm_nodes(Global.myMesh, Global.myID, Param.parameters_input_file,
-    				Global.myOctree->ticksize, Global.theGroupSize);
-    	}
-    	if (Param.theDrmPart == PART1) {
-    		setup_drm_data(Global.myMesh, Global.myID, Global.theGroupSize);
-    	}
-    	if (Param.theDrmPart == PART2) {
-    		proc_drm_elems(Global.myMesh, Global.myID, Global.theGroupSize, Param.theTotalSteps);
-    	}
-    	drm_stats(Global.myID, Global.theGroupSize, Global.theXForMeshOrigin,
-    			 Global.theYForMeshOrigin, Global.theZForMeshOrigin);
-    	Timer_Stop("Drm Init");
-    	Timer_Reduce("Drm Init", MAX | MIN | AVERAGE , comm_solver);
+        Timer_Start("Drm Init");
+        if ( Param.theDrmPart == PART0 ) {
+            find_drm_nodes(Global.myMesh, Global.myID, Param.parameters_input_file,
+                    Global.myOctree->ticksize, Global.theGroupSize);
+        }
+        if (Param.theDrmPart == PART1) {
+            setup_drm_data(Global.myMesh, Global.myID, Global.theGroupSize);
+        }
+        if (Param.theDrmPart == PART2) {
+            proc_drm_elems(Global.myMesh, Global.myID, Global.theGroupSize, Param.theTotalSteps);
+        }
+        drm_stats(Global.myID, Global.theGroupSize, Global.theXForMeshOrigin,
+                 Global.theYForMeshOrigin, Global.theZForMeshOrigin);
+        Timer_Stop("Drm Init");
+        Timer_Reduce("Drm Init", MAX | MIN | AVERAGE , comm_solver);
     }
+
+    /* Initialize topography solver analysis structures */
+    /* must be before solver_init() for proper treatment of the nodal mass */
+    if ( Param.includeTopography == YES )
+        topo_solver_init(Global.myID, Global.myMesh);
 
     if (Param.theMeshOutFlag && DO_OUTPUT) {
         mesh_output();
@@ -7454,27 +8422,34 @@ int main( int argc, char** argv )
 
     if ( Param.storeMeshCoordinatesForMatlab == YES ) {
         saveMeshCoordinatesForMatlab( Global.myMesh, Global.myID, Param.parameters_input_file,
-				      Global.myOctree->ticksize,Param.theTypeOfDamping,Global.theXForMeshOrigin,
-				      Global.theYForMeshOrigin,Global.theZForMeshOrigin, Param.includeBuildings);
+                      Global.myOctree->ticksize,Param.theTypeOfDamping,Global.theXForMeshOrigin,
+                      Global.theYForMeshOrigin,Global.theZForMeshOrigin, Param.includeBuildings);
     }
 
     Timer_Start("Mesh Stats Print");
     mesh_print_stat(Global.myOctree, Global.myMesh, Global.myID, Global.theGroupSize,
-		    Param.theMeshStatFilename);
+            Param.theMeshStatFilename);
     Timer_Stop("Mesh Stats Print");
     Timer_Reduce("Mesh Stats Print", MAX | MIN, comm_solver);
+
+
+    if ( Param.theNumberOfStations !=0 ){
+        output_stations_init(Param.parameters_input_file);
+    }
+
+    /* include additional info for topo stations */
+
+    if ( ( Param.includeTopography == YES ) && ( Param.theNumberOfStations !=0 ) )
+        topography_stations_init(Global.myMesh, Param.myStations, Param.myNumberOfStations);
+
 
     /* Initialize the output planes */
     if ( Param.theNumberOfPlanes != 0 ) {
         planes_setup(Global.myID, &Param.thePlanePrintRate, Param.IO_pool_pe_count,
-		     Param.theNumberOfPlanes, Param.parameters_input_file, get_surface_shift(),
-		     Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
-		     Param.theDomainX, Param.theDomainY, Param.theDomainZ,
-		     Param.planes_input_file);
-    }
-
-    if ( Param.theNumberOfStations !=0 ){
-        output_stations_init(Param.parameters_input_file);
+             Param.theNumberOfPlanes, Param.parameters_input_file, get_surface_shift(),
+             Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+             Param.theDomainX, Param.theDomainY, Param.theDomainZ,
+             Param.planes_input_file);
     }
 
     /* Initialize the solver, source and output structures */
@@ -7493,16 +8468,29 @@ int main( int argc, char** argv )
         nonlinear_stats(Global.myID, Global.theGroupSize);
     }
 
+
+    /* include additional info for topo stations */
+    if ( Param.includeTopography == YES  )
+            topo_stats(Global.myID, Global.theGroupSize);
+
+    if ( Param.includeIncidentPlaneWaves == YES ){
+        PlaneWaves_solver_init( Global.myID, Global.myMesh, Global.mySolver );
+    }
+
     Timer_Start("Source Init");
     source_init(Param.parameters_input_file);
     Timer_Stop("Source Init");
     Timer_Reduce("Source Init", MAX | MIN, comm_solver);
 
+
     /* Mapping element indices for stiffness
      * This is for compatibility with nonlinear
      * \TODO a more clever way should be possible
      */
-    stiffness_init(Global.myID, Global.myMesh);
+    if( Param.theTypeOfDamping < BKT )
+        stiffness_init(Global.myID, Global.myMesh); //initialize linear elements only for Rayleigh damping
+    else
+        damp_init(Global.myID, Global.myMesh);
 
     /* this is a little too late to check for output parameters,
      * but let's do this in the mean time
@@ -7518,7 +8506,7 @@ int main( int argc, char** argv )
 
     if ( Param.includeNonlinearAnalysis == YES ) {
         nonlinear_yield_stats( Global.myMesh, Global.myID, Param.theTotalSteps,
-			       Global.theGroupSize );
+                   Global.theGroupSize );
     }
 
     output_fini();

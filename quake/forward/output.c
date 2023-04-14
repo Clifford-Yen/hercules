@@ -1683,7 +1683,7 @@ po_collect_io_stats (
 	    int flag = 0, wtime_is_global = 0, ret;
 
 	    e2e_elapsed_time += MPI_Wtime();
-	    ret = MPI_Attr_get (comm_solver, MPI_WTIME_IS_GLOBAL,
+	    ret = MPI_Comm_get_attr (comm_solver, MPI_WTIME_IS_GLOBAL,
 				&wtime_is_global, &flag);
 
 	    if (!flag) {

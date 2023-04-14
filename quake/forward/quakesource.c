@@ -92,6 +92,7 @@
 #include "quakesource.h"
 #include "quake_util.h"
 #include "util.h"
+#include "topography.h"
 
 
 
@@ -154,9 +155,10 @@ static double theRegionOriginLatDeg,
     theRegionAzimuthDeg;
 static double theRegionDepthShallowM, theRegionLengthEastM;
 static double theRegionLengthNorthM, theRegionDepthDeepM;
-static double theDeltaT,theValidFreq;
+static double theDeltaT,theValidFreq, theSRFHdt = 0, theEndT, theStartT;
 
 static int32_t	      theNumberOfTimeSteps;
+static int32_t	      theNumberOfSRFHSourceTimeSteps=0;
 static int32_t	      theSourceIsFiltered;
 static source_type_t  theTypeOfSource;
 
@@ -256,7 +258,13 @@ source_get_local_loaded_nodes_count()
     return myNumberOfNodesLoaded;
 }
 
+double get_srfhdt() {
+    return theSRFHdt;
+}
 
+source_type_t get_sourceType() {
+	return theTypeOfSource;
+}
 
 /**
  * Interpolate linearly a function if the time is larger than the one
@@ -377,7 +385,7 @@ compute_source_function (ptsrc_t* pointSource)
       decay =0;
     }
 
-    pointSource->displacement[ iTime ] += decay * pointSource->maxSlip;
+    pointSource->displacement[ iTime ] = decay * pointSource->maxSlip; // Dorian says: changed += by =
 
   }
 
@@ -763,6 +771,7 @@ print_filter(
 
 /**
  * Print the slip function for the "average" source function.
+ * Todo: Dorian says: This function is not used. Revise to delete
  */
 static int
 print_slip_function (const char* filename)
@@ -1209,9 +1218,10 @@ load_myForces_with_point_source(
 	j = pointSource -> lnid [ iNode ];
 
 	if ( myForces [ j ] == NULL  && myForcesCycle[j] == cycle){
-	    myForces [ j ] =
+	    /*myForces [ j ] =
 		( vector3D_t * ) malloc ( sizeof ( vector3D_t ) *
-					  theNumberOfTimeSteps);
+					  theNumberOfTimeSteps);  */
+	    myForces [ j ] = ( vector3D_t * ) calloc ( theNumberOfTimeSteps, sizeof ( vector3D_t ) ); // Dorian says: changed to calloc to avoid initialization
 	    myNumberOfNodesLoaded +=1;
 	    myMemoryAllocated +=  sizeof ( vector3D_t ) * theNumberOfTimeSteps;
 
@@ -1222,11 +1232,11 @@ load_myForces_with_point_source(
 		exit(1);
 	    }
 
-	    for (iCoord = 0; iCoord < 3; iCoord++) {
+	    /*for (iCoord = 0; iCoord < 3; iCoord++) {
 		for (iTime = 0; iTime < theNumberOfTimeSteps; iTime++) {
 		    myForces [j][iTime].x[iCoord]=0;
 		}
-	    }
+	    } */ // Dorian says: not necessary if changed to calloc
 	    isinprocessor+=1;
 	}
     }
@@ -1566,53 +1576,50 @@ static vector3D_t compute_global_coords_mapping(vector3D_t point){
  */
 static double compute_strike_planewithkinks(vector3D_t point){
 
-  int iKink=-1, iKinkOrigin=-1;
+    int iKink=-1, iKinkOrigin=-1;
+    double normalizedDistance, strike = 0;
 
-  double normalizedDistance, strike;
+    /* Normalize x[0]  value with the totalLength */
 
-  /* Normalize x[0]  value with the totalLength */
+    normalizedDistance = point.x[0]/theTotalTraceLength;
 
-  normalizedDistance = point.x[0]/theTotalTraceLength;
+    /* Check between which elements is this length */
 
-  /* Check between which elements is this length */
-
-  /* do not make it more complex unless you really want to do something
+    /* do not make it more complex unless you really want to do something
      more complex in geometry */
 
-  while ( iKinkOrigin < 0 ){
+    while ( iKinkOrigin < 0 ) {
 
-    iKink=iKink +1;
+        iKink=iKink +1;
 
-    if ( theTraceLengthAccumulated[iKink] <= normalizedDistance &&
-	 theTraceLengthAccumulated[iKink+1] >= normalizedDistance )
+        if ( theTraceLengthAccumulated[iKink]   <= normalizedDistance &&
+             theTraceLengthAccumulated[iKink+1] >= normalizedDistance ) {
+            iKinkOrigin = iKink;
+        }
+    }
 
-      iKinkOrigin = iKink;
+    if( theTraceVectors[iKinkOrigin].x[1] >= 0) {
 
+        strike = acos(theTraceVectors[iKinkOrigin].x[0]);
 
-  }
+    } else if ( theTraceVectors[iKinkOrigin].x[0] < 0 &&
+                theTraceVectors[iKinkOrigin].x[1] <= 0 ) {
 
-  if( theTraceVectors[iKinkOrigin].x[1] >= 0)
+        strike = ( 3*PI/2 ) - acos(theTraceVectors[iKinkOrigin].x[0]);
 
-    strike = acos(theTraceVectors[iKinkOrigin].x[0]);
+    } else if ( theTraceVectors[iKinkOrigin].x[0] > 0 &&
+                theTraceVectors[iKinkOrigin].x[1] < 0 ) {
 
-  else if ( theTraceVectors[iKinkOrigin].x[0] < 0 &&
-	    theTraceVectors[iKinkOrigin].x[1] <= 0 )
+        strike = acos(theTraceVectors[iKinkOrigin].x[0]) + 3*PI/2;
+    }
 
-    strike = ( 3*PI/2 ) - acos(theTraceVectors[iKinkOrigin].x[0]);
-
-  else if ( theTraceVectors[iKinkOrigin].x[0] > 0 &&
-	    theTraceVectors[iKinkOrigin].x[1] < 0 )
-
-    strike = acos(theTraceVectors[iKinkOrigin].x[0]) + 3*PI/2;
-
-
-  /* compute deg that is what is take from the code */
+    /* compute deg that is what is take from the code */
 
 
-  strike = 180* strike / PI;
+    strike = 180* strike / PI;
 
 
-  return strike;
+    return strike;
 
 }
 
@@ -1905,50 +1912,47 @@ read_domain( FILE* fp )
 
 /*
  * read_filter :  if myForce vector is going to be read extra data is required
- *
  *       input :  fp - to source.in
- *
- *
  *      output :  -1 fail
  *                 1 success
- *
  *      Notes  :  a low pass butterworth filter is used
- *
+ *                number of poles and threshold frequency are initialized to 4 and 0.5
+ *                to avoid warnings.
  */
 static int read_filter(FILE *fp){
 
 
-  int source_is_filtered, number_of_poles;
+    int source_is_filtered, number_of_poles = 4;
 
-  double threshold_frequency;
+    double threshold_frequency = 0.5 ;
 
-  if ( parsetext( fp, "source_is_filtered", 'i', &source_is_filtered) != 0){
-    fprintf(stderr, "Error parsing source.in reading filter parameters\n");
-    return -1;
-  }
-  if ( source_is_filtered == 1 ){
+    if ( parsetext( fp, "source_is_filtered", 'i', &source_is_filtered) != 0){
+        fprintf(stderr, "Error parsing source.in reading filter parameters\n");
+        return -1;
+    }
+    if ( source_is_filtered == 1 ){
 
-    if ( parsetext( fp, "threshold_frequency", 'd', &threshold_frequency) != 0){
-      fprintf(stderr, "Error parsing source.in reading filter parameters\n");
-      return -1;
+        if ( parsetext( fp, "threshold_frequency", 'd', &threshold_frequency) != 0){
+            fprintf(stderr, "Error parsing source.in reading filter parameters\n");
+            return -1;
+        }
+
+        if ( (parsetext(fp, "threshold_frequency", 'd',
+                &threshold_frequency) != 0) ||
+                (parsetext(fp, "number_of_poles", 'i',
+                        &number_of_poles)     != 0) ) {
+            fprintf(stderr, "Error parsing source.in reading filter parameters\n");
+            return -1;
+        }
+
     }
 
-    if ( (parsetext(fp, "threshold_frequency", 'd',
-		    &threshold_frequency) != 0) ||
-	 (parsetext(fp, "number_of_poles", 'i',
-		    &number_of_poles)     != 0) ) {
-      fprintf(stderr, "Error parsing source.in reading filter parameters\n");
-      return -1;
-    }
 
-  }
+    theSourceIsFiltered   = source_is_filtered;
+    theThresholdFrequency = threshold_frequency;
+    theNumberOfPoles      = number_of_poles;
 
-
-  theSourceIsFiltered   = source_is_filtered;
-  theThresholdFrequency = threshold_frequency;
-  theNumberOfPoles      = number_of_poles;
-
-  return 1;
+    return 1;
 
 }
 
@@ -1968,72 +1972,67 @@ static int read_filter(FILE *fp){
  *
  *
  */
-static int read_common_all_formats ( FILE *fp ){
+static int read_common_all_formats ( FILE *fp ) {
 
+    double average_risetime_sec, ricker_Ts = 0, ricker_Tp = 0;
+    char  source_function_type[64];
+    source_function_t sourceFunctionType;
 
-  double average_risetime_sec, ricker_Ts, ricker_Tp;
+    /*
+     *  From source.in slip function parameters
+     */
 
-  char  source_function_type[64];
+    if ( (parsetext(fp, "source_function_type", 's',
+            &source_function_type) != 0) ) {
+        fprintf(stderr, "Error parsing files from source.in");
+        return -1;
 
-  source_function_t sourceFunctionType;
-
-
-  /*
-   *  From source.in slip function parameters
-   */
-
-
-  if ( (parsetext(fp, "source_function_type", 's',
-		  &source_function_type) != 0) ) {
-    fprintf(stderr, "Error parsing files from source.in");
-    return -1;
-
-  }
-
-  if ( strcasecmp(source_function_type, "ramp") == 0 )
-    sourceFunctionType = RAMP;
-  else if ( strcasecmp(source_function_type, "sine") == 0 )
-    sourceFunctionType = SINE;
-  else if ( strcasecmp(source_function_type, "quadratic") == 0 )
-    sourceFunctionType = QUADRATIC;
-  else if ( strcasecmp(source_function_type, "ricker") == 0 )
-    sourceFunctionType = RICKER;
-  else if ( strcasecmp(source_function_type, "exponential") == 0 )
-    sourceFunctionType = EXPONENTIAL;
-  else if ( strcasecmp(source_function_type, "discrete") == 0 )
-    sourceFunctionType = DISCRETE;
-
-  else {
-    fprintf(stderr, "Unknown excitation type %s\n", source_function_type);
-    return -1;
-  }
-
-  if ( sourceFunctionType == RAMP       ||
-       sourceFunctionType == SINE       ||
-       sourceFunctionType == QUADRATIC  ||
-       sourceFunctionType == EXPONENTIAL ) {
-
-    if ( (parsetext(fp, "average_risetime_sec", 'd',
-		    &average_risetime_sec) != 0)){
-      fprintf(stderr, "Cannot get time function parameters\n");
-      return -1;
     }
-  }
 
-  if (  sourceFunctionType == RICKER ) {
-    if ( (parsetext(fp, "ricker_Ts", 'd', &ricker_Ts) != 0)||
-	 (parsetext(fp, "ricker_Tp", 'd', &ricker_Tp) != 0)) {
-      fprintf(stderr, "Cannot get parameters to ricker's function\n");
-      return -1;
+    if ( strcasecmp(source_function_type, "ramp") == 0 )
+        sourceFunctionType = RAMP;
+    else if ( strcasecmp(source_function_type, "sine") == 0 )
+        sourceFunctionType = SINE;
+    else if ( strcasecmp(source_function_type, "quadratic") == 0 )
+        sourceFunctionType = QUADRATIC;
+    else if ( strcasecmp(source_function_type, "ricker") == 0 )
+        sourceFunctionType = RICKER;
+    else if ( strcasecmp(source_function_type, "exponential") == 0 )
+        sourceFunctionType = EXPONENTIAL;
+    else if ( strcasecmp(source_function_type, "discrete") == 0 )
+        sourceFunctionType = DISCRETE;
+
+    else {
+        fprintf(stderr, "Unknown excitation type %s\n", source_function_type);
+        return -1;
     }
-  }
 
-  theSourceFunctionType = sourceFunctionType;
-  theAverageRisetimeSec = average_risetime_sec;
-  theRickerTs = ricker_Ts;
-  theRickerTp = ricker_Tp;;
+    if ( sourceFunctionType == RAMP       ||
+         sourceFunctionType == SINE       ||
+         sourceFunctionType == QUADRATIC  ||
+         sourceFunctionType == EXPONENTIAL ) {
 
-  return 1;
+        if ( (parsetext(fp, "average_risetime_sec", 'd',
+                &average_risetime_sec) != 0)){
+            fprintf(stderr, "Cannot get time function parameters\n");
+            return -1;
+        }
+    }
+
+    if (  sourceFunctionType == RICKER ) {
+        if ( ( parsetext(fp, "ricker_Ts", 'd', &ricker_Ts) != 0 ) ||
+             ( parsetext(fp, "ricker_Tp", 'd', &ricker_Tp) != 0 ) ) {
+            fprintf(stderr, "Cannot get parameters to ricker's function\n");
+            return -1;
+        }
+    }
+
+    theSourceFunctionType = sourceFunctionType;
+    theAverageRisetimeSec = average_risetime_sec;
+    theRickerTs = ricker_Ts;
+    theRickerTp = ricker_Tp;;
+
+    return 1;
 
 }
 
@@ -2345,6 +2344,23 @@ read_srfh_source ( FILE *fp, FILE *fpcoords, FILE *fparea, FILE *fpstrike,
     ABORT_PROGRAM ("Error source srfh matrices: read_srfh_source");
   }
 
+  /* Dorian: Moved for compability with the topography module  */
+  /* corners of the surface */
+  auxiliar = (double *)malloc(sizeof(double)*8);
+  if ( auxiliar == NULL ) {
+    perror(" Alloc auxiliar: read_srfh_source");
+    MPI_Abort(MPI_COMM_WORLD, ERROR );
+    return -1;
+  }
+  parsedarray( fp, "domain_surface_corners", 8 ,auxiliar);
+  for ( iCorner = 0; iCorner < 4; iCorner++){
+    theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
+    theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
+  }
+
+  free(auxiliar);
+  /* end corners of surface */
+
   /* read fault points description */
   for ( iSrc = 0; iSrc < theNumberOfPointSources; iSrc++ ){
     fscanf(fpcoords," %lf %lf %lf ", &(theSourceLonArray[iSrc]),
@@ -2362,26 +2378,42 @@ read_srfh_source ( FILE *fp, FILE *fpcoords, FILE *fparea, FILE *fpstrike,
     theSourceDepthArray[iSrc] += surfaceShift;
     theSourceTinitArray[iSrc] += globalDelayT;
 
+    /* Dorian: Source location wrt the free surface, i.e. hypocentral distance */
+    /* Dorian: keeping the z coordinate unmodified  */
+    if ( get_thebase_topo() != 0.0 ) {
+
+    	vector3D_t coords_aux = compute_domain_coords_linearinterp(theSourceLonArray[iSrc],
+    								     theSourceLatArray[iSrc],
+    								     theSurfaceCornersLong ,
+    								     theSurfaceCornersLat,
+    								     theRegionLengthEastM,
+    								     theRegionLengthNorthM );
+
+    	theSourceDepthArray[iSrc] += point_elevation ( coords_aux.x[0], coords_aux.x[1] );
+    }
+
     theSourceSlipFunArray[iSrc]=malloc(sizeof(double)*theSourceNt1Array[iSrc]);
 
     for ( iTime = 0; iTime < theSourceNt1Array[iSrc]; iTime++)
       fscanf(fpslipfun," %lf ", &(theSourceSlipFunArray[iSrc][iTime]));
   }
 
-  /* corners of the surface */
-  auxiliar = (double *)malloc(sizeof(double)*8);
-  if ( auxiliar == NULL ) {
-    perror(" Alloc auxiliar: read_srfh_source");
-    MPI_Abort(MPI_COMM_WORLD, ERROR );
-    return -1;
-  }
-  parsedarray( fp, "domain_surface_corners", 8 ,auxiliar);
-  for ( iCorner = 0; iCorner < 4; iCorner++){
-    theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
-    theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
+  for ( iSrc = 0; iSrc < theNumberOfPointSources - 1; iSrc++ ){
+	  if ( theSourceDtArray[iSrc] != theSourceDtArray[iSrc+1] ) {
+		  fprintf(stderr, "Thread %d: source_init: source:%d with different time-step\n", myID, iSrc+1);
+		  MPI_Abort(MPI_COMM_WORLD, ERROR);
+		  exit(1);
+	  }
   }
 
-  free(auxiliar);
+  if ( theNumberOfPointSources == 0 )
+    theSRFHdt = 1;
+  else
+    theSRFHdt = theSourceDtArray[0];
+
+  theNumberOfSRFHSourceTimeSteps =  (int)(((theEndT - theStartT) / theSRFHdt)) + 10; // added ten aditional steps to avoid interpolation issues at theEndT
+
+  theNumberOfTimeSteps = theNumberOfSRFHSourceTimeSteps; // rewrite the number of timesteps
 
   return 1;
 
@@ -3219,6 +3251,10 @@ compute_myForces_point( const char* physicsin )
     pntSrc.dt		      = theDeltaT;
     pntSrc.numberOfTimeSteps  = theNumberOfTimeSteps;
 
+    /* dorian. added Ricker«s pulse parameters */
+    pntSrc.Tp  = theRickerTp;
+    pntSrc.Ts  = theRickerTs;
+
     pntSrc.displacement
 	= (double*)calloc (theNumberOfTimeSteps, sizeof (double));
 
@@ -3300,13 +3336,14 @@ static int  compute_myForces_srfh(const char *physicsin){
   theIOInitTime          = -MPI_Wtime();
 
 
-  pntSrc.displacement = (double*)malloc(sizeof(double)*theNumberOfTimeSteps );
+  pntSrc.displacement = (double*)calloc(theNumberOfTimeSteps, sizeof(double) ); // Dorian says: changed to calloc for array initialization
   if(pntSrc.displacement == NULL){
     fprintf(stdout, "Err alloc displacments");
     return -1;
   }
 
-  pntSrc.dt = theDeltaT;
+  //pntSrc.dt = theDeltaT;
+  pntSrc.dt = theSRFHdt;
   pntSrc.numberOfTimeSteps = theNumberOfTimeSteps;
 
   WAIT;
@@ -3746,8 +3783,8 @@ broadcast_plane_source_parameters( void )
 static void
 source_broadcast_parameters( void )
 {
-    int32_t i_buf[5];
-    double  d_buf[15];
+    int32_t i_buf[6];
+    double  d_buf[18];
 
     const int i_len = INT32_ARRAY_LENGTH( i_buf );
     const int d_len = DOUBLE_ARRAY_LENGTH( d_buf );
@@ -3761,16 +3798,18 @@ source_broadcast_parameters( void )
     i_buf[2] = theTypeOfSource;
     i_buf[3] = theNumberOfPoles;
     i_buf[4] = theSourceFunctionType;
+    i_buf[5] = theNumberOfSRFHSourceTimeSteps;
 
     /* broadcast int parameters */
     MPI_Bcast( i_buf, i_len, MPI_INT, 0, comm_solver );
 
     /* this is an identity assigment on PE 0 */
-    theNumberOfTimeSteps   = i_buf[0];
-    theSourceIsFiltered    = i_buf[1];
-    theTypeOfSource	   = i_buf[2];
-    theNumberOfPoles	   = i_buf[3];
-    theSourceFunctionType  = i_buf[4];
+    theNumberOfTimeSteps            = i_buf[0];
+    theSourceIsFiltered             = i_buf[1];
+    theTypeOfSource	                = i_buf[2];
+    theNumberOfPoles	            = i_buf[3];
+    theSourceFunctionType           = i_buf[4];
+    theNumberOfSRFHSourceTimeSteps  = i_buf[5];
 
     /* group all double parameters in an array and broadcast the array */
     d_buf[0]  = theRegionOriginLatDeg;
@@ -3788,6 +3827,9 @@ source_broadcast_parameters( void )
     d_buf[12] = theRickerTs;
     d_buf[13] = theRickerTp;
     d_buf[14] = theThresholdFrequency;
+    d_buf[15] = theEndT;
+    d_buf[16] = theStartT;
+    d_buf[17] = theSRFHdt;
 
     /* broadcast theRegion* parameters and other double parameters */
     MPI_Bcast( d_buf, d_len, MPI_DOUBLE, 0, comm_solver );
@@ -3799,14 +3841,17 @@ source_broadcast_parameters( void )
     theRegionLengthEastM   = d_buf[ 4];
     theRegionLengthNorthM  = d_buf[ 5];
     theRegionDepthDeepM    = d_buf[ 6];
-    theDeltaT		   = d_buf[ 7];
-    theValidFreq	   = d_buf[ 8];
+    theDeltaT		       = d_buf[ 7];
+    theValidFreq	       = d_buf[ 8];
     theAverageRisetimeSec  = d_buf[ 9];
     theMomentMagnitude     = d_buf[10];
     theMomentAmplitude     = d_buf[11];
-    theRickerTs		   = d_buf[12];
-    theRickerTp		   = d_buf[13];
+    theRickerTs		       = d_buf[12];
+    theRickerTp		       = d_buf[13];
     theThresholdFrequency  = d_buf[14];
+    theEndT                = d_buf[15];
+    theStartT              = d_buf[16];
+    theSRFHdt              = d_buf[17];
 
     /* broadcast the time windows */
     MPI_Bcast( &theNumberOfTimeWindows, 1, MPI_INT, 0, comm_solver );
@@ -4019,6 +4064,8 @@ compute_print_source( const char *physicsin, octree_t *myoctree,
     theNumberOfTimeSteps = numericsinformation.numberoftimesteps;
     theValidFreq	 = numericsinformation.validfrequency;
     theMinimumEdge	 = numericsinformation.minimumh;
+    theEndT	         = numericsinformation.endT;
+    theStartT	     = numericsinformation.startT;
 
     theDomainX = numericsinformation.xlength;
     theDomainY = numericsinformation.ylength;

@@ -1,6 +1,6 @@
-#ifndef WORKDIR
+ifndef WORKDIR
 	WORKDIR = $(PWD)/..
-#endif
+endif
 
 include $(WORKDIR)/systemdef.mk
 include $(WORKDIR)/common.mk

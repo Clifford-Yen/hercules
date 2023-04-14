@@ -33,7 +33,7 @@
 #define DIST1LON 92382.0     /* distance(meters) of 1 degree longitude  */
 
 typedef struct cvmpayload_t {
-    float Vp, Vs, rho;
+    float Vp, Vs, rho, Qp, Qs;
 } cvmpayload_t;
 
 //typedef struct cvmpayload_t cvmpayload_t;
