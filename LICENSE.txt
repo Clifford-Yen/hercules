@@ -1,0 +1,18 @@
+This is a provisional license for the Hercules ground motion simulator
+developed by the Quake group.  This license covers all the files
+distributed in the Hercules software package.
+
+Hercules may not be used without express permission from the authors
+For alternate licensing informations contact the authors.
+
+This program comes WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+'LICENSE.txt' file for more details.
+
+Contact information:
+
+Jacobo Bielak
+Civil and Environmental Engineering Department
+Carnegie Mellon University
+5000 Forbes Avenue
+Pittsburgh, PA 15213
