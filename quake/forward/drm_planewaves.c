@@ -1422,6 +1422,7 @@ int material_property_relative_V10_local(double x_input, double y_input, double 
 
 		z_input = z_input + zi_elevation;
 
+		// Possibly redundant
 		row1 = 0;
 
 		for (i = 0; i < 4; i++)

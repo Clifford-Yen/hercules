@@ -71,3 +71,6 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Visual Studio Code Related
+.vscode/

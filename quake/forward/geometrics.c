@@ -171,7 +171,7 @@ vector3D_t compute_domain_coords( vector3D_t point, double azimuth )
 
 
 /**
- * Computes the domain coordinates of a point based corners of the global
+ * Computes the domain coordinates of a point based on corners of the global
  * coordinates (long lat depth).
  */
 vector3D_t
