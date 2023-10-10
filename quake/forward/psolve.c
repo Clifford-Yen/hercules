@@ -59,6 +59,7 @@
 #include "meshformatlab.h"
 #include "topography.h"
 #include "drm_planewaves.h"
+#include "basin.h"
 
 /* ONLY GLOBAL VARIABLES ALLOWED OUTSIDE OF PARAM. and GLOBAL. IN ALL OF PSOLVE!! */
 MPI_Comm comm_solver;
@@ -188,6 +189,59 @@ static void compute_adjust(void *valuetable, int32_t itemsperentry,
 
 static int interpolate_station_displacements(int32_t step);
 
+double **malloc2dDouble(int n, int m) {
+    /* NOTE: To MPI_Bcast a 2D array, the pre-allocated memory blocks have to be 
+    continuous. That's why this function should be used to do the pre-allocation. */ 
+    static const char *fname = __FUNCTION_NAME;
+    /* allocate the n*m contiguous items */
+    double *p = (double *)malloc(n * m * sizeof(double));
+    if (p == NULL) {
+        solver_abort(fname, NULL, "Error allocating memory for the n*m contiguous items\n");
+    }
+    /* allocate the row pointers into the memory */
+    double **array = (double **)malloc(n * sizeof(double *));
+    if (array == NULL) {
+        free(p);
+        solver_abort(fname, NULL, "Error allocating memory for the row pointers\n");
+    }
+    /* set up the pointers into the contiguous memory */
+    for (int i = 0; i < n; i++) 
+       array[i] = &(p[i*m]);
+    return array;
+}
+
+/* ---------- Reading parameters from files ---------- */ 
+double **readBasin(char *filename, int *x_count, int *y_count, int *z_count, double *increment) {
+    FILE *fp;
+    int i;
+    // Open the file in read mode
+    fp = fopen(filename, "r");
+    if (fp == NULL) {
+        printf("Error opening file %s.\n", filename);
+        exit(1);
+    }
+    // Read the first line to get the counts
+    fscanf(fp, "%d %d %d", x_count, y_count, z_count);
+    // Calculate the total number of lines in the file
+    int total_lines = (*x_count) * (*y_count) * (*z_count);
+    // Create a 2D array to store the data
+    // NOTE: This way doen't work for MPI_Bcast. The memory blocks pre-allocated this way are not continuous.
+    // double **data = (double **)malloc(total_lines * sizeof(double *));
+    // for (i = 0; i < total_lines; i++) {
+    //     data[i] = (double *)malloc(3 * sizeof(double));
+    // }
+    double **data = malloc2dDouble(total_lines, 3);
+    // Read the data and store it in the array
+    for (i = 0; i < total_lines; i++) {
+        fscanf(fp, "%lf %lf %lf", &data[i][0], &data[i][1], &data[i][2]);
+    }
+    // Assuming the increments for x and y values in the 'data' array are the same
+    *increment = data[1][0] - data[0][0];
+    // Close the file
+    fclose(fp);
+    return data;
+}
+
 /* ---------- Static global variables ------------------------------------ */
 
 /* These are all of the input parameters - add new ones here */
@@ -201,6 +255,7 @@ static struct Param_t
     char cvmdb_input_file[256];
     char mesh_etree_output_file[256];
     char planes_input_file[256];
+    char basin_input_file[256];
     double theVsCut;
     double theFactor;
     double theFreq;
@@ -236,6 +291,7 @@ static struct Param_t
     noyesflag_t includeIncidentPlaneWaves;
     noyesflag_t includeHomogeneousHalfSpace;
     noyesflag_t IstanbulMaterialModel;
+    noyesflag_t basinMaterialModel;
 
     int theTimingBarriersFlag;
     stiffness_type_t theStiffness;
@@ -280,6 +336,11 @@ static struct Param_t
     double theQConstant;
     double theQAlpha;
     double theQBeta;
+    double theBasinLong;
+    double theBasinLat;
+    int basinXCount, basinYCount, basinZCount;
+    double basinIncrement;
+    double **basinData;
 
 } Param = {
     .FourDOutFp = NULL,
@@ -389,8 +450,8 @@ monitor_print(const char *format, ...)
 static void read_parameters(int argc, char **argv)
 {
 
-#define LOCAL_INIT_DOUBLE_MESSAGE_LENGTH 21 /* Must adjust this if adding double params */
-#define LOCAL_INIT_INT_MESSAGE_LENGTH 26    /* Must adjust this if adding int params */
+#define LOCAL_INIT_DOUBLE_MESSAGE_LENGTH 24 /* Must adjust this if adding double params */
+#define LOCAL_INIT_INT_MESSAGE_LENGTH 30    /* Must adjust this if adding int params */
 
     double double_message[LOCAL_INIT_DOUBLE_MESSAGE_LENGTH];
     int int_message[LOCAL_INIT_INT_MESSAGE_LENGTH];
@@ -430,6 +491,9 @@ static void read_parameters(int argc, char **argv)
     double_message[18] = Param.theQConstant;
     double_message[19] = Param.theQAlpha;
     double_message[20] = Param.theQBeta;
+    double_message[21] = Param.theBasinLong;
+    double_message[22] = Param.theBasinLat;
+    double_message[23] = Param.basinIncrement;
 
     MPI_Bcast(double_message, LOCAL_INIT_DOUBLE_MESSAGE_LENGTH, MPI_DOUBLE, 0, comm_solver);
 
@@ -454,6 +518,9 @@ static void read_parameters(int argc, char **argv)
     Param.theQConstant = double_message[18];
     Param.theQAlpha = double_message[19];
     Param.theQBeta = double_message[20];
+    Param.theBasinLong = double_message[21];
+    Param.theBasinLat = double_message[22];
+    Param.basinIncrement = double_message[23];
 
     /*Broadcast all integer params*/
     int_message[0] = Param.theTotalSteps;
@@ -482,6 +549,10 @@ static void read_parameters(int argc, char **argv)
     int_message[23] = (int)Param.IstanbulMaterialModel;
     int_message[24] = (int)Param.useProfile;
     int_message[25] = (int)Param.useParametricQ;
+    int_message[26] = (int)Param.basinMaterialModel;
+    int_message[27] = (int)Param.basinXCount;
+    int_message[28] = (int)Param.basinYCount;
+    int_message[29] = (int)Param.basinZCount;
 
     MPI_Bcast(int_message, LOCAL_INIT_INT_MESSAGE_LENGTH, MPI_INT, 0, comm_solver);
 
@@ -511,6 +582,10 @@ static void read_parameters(int argc, char **argv)
     Param.IstanbulMaterialModel = int_message[23];
     Param.useProfile = int_message[24];
     Param.useParametricQ = int_message[25];
+    Param.basinMaterialModel = int_message[26];
+    Param.basinXCount = int_message[27];
+    Param.basinYCount = int_message[28];
+    Param.basinZCount = int_message[29];
 
     /*Broadcast all string params*/
     MPI_Bcast(Param.parameters_input_file, 256, MPI_CHAR, 0, comm_solver);
@@ -519,10 +594,20 @@ static void read_parameters(int argc, char **argv)
     MPI_Bcast(Param.cvmdb_input_file, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.mesh_etree_output_file, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.planes_input_file, 256, MPI_CHAR, 0, comm_solver);
+    MPI_Bcast(Param.basin_input_file, 256, MPI_CHAR, 0, comm_solver);
 
     /*Broadcast domain's coords */
     MPI_Bcast(Param.theSurfaceCornersLong, 4, MPI_DOUBLE, 0, comm_solver);
     MPI_Bcast(Param.theSurfaceCornersLat, 4, MPI_DOUBLE, 0, comm_solver);
+
+    /* Broadcast basin data */
+    if (Param.basinMaterialModel == YES) {
+        int total_lines = Param.basinXCount * Param.basinYCount * Param.basinZCount;
+        if (Global.myID != 0) {
+            Param.basinData = malloc2dDouble(total_lines, 3);
+        }
+        MPI_Bcast(&Param.basinData[0][0], 3*total_lines, MPI_DOUBLE, 0, comm_solver);
+    }
 
     return;
 }
@@ -719,8 +804,10 @@ static int32_t parse_parameters(const char *numericalin)
         use_infinite_qk[64],
         include_topography[64],
         include_incident_planewaves[64],
-        include_hmgHalfSpace[64],
-        IstanbulModel[64];
+        include_hmgHalfSpace[64];
+    /* Optional parameters */
+    char IstanbulModel[64] = "no",
+        basinModel[64] = "no";
 
     damping_type_t typeOfDamping = -1;
     stiffness_type_t stiffness_method = -1;
@@ -738,6 +825,7 @@ static int32_t parse_parameters(const char *numericalin)
     noyesflag_t includePlaneWaves = -1;
     noyesflag_t includeHmgHalfSpace = -1;
     noyesflag_t includeIstanbulMatmodel = -1;
+    noyesflag_t includebasinMatmodel = -1;
 
     /* Obtain the specification of the simulation */
     if ((fp = fopen(physicsin, "r")) == NULL)
@@ -860,7 +948,6 @@ static int32_t parse_parameters(const char *numericalin)
         (parsetext(fp, "include_topography", 's', &include_topography) != 0) ||
         (parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves) != 0) ||
         (parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace) != 0) ||
-        (parsetext(fp, "Istanbul_material_model", 's', &IstanbulModel) != 0) ||
         (parsetext(fp, "simulation_velocity_profile_freq_hz", 'd', &freq_vel) != 0) ||
         (parsetext(fp, "use_infinite_qk", 's', &use_infinite_qk) != 0))
     {
@@ -868,6 +955,11 @@ static int32_t parse_parameters(const char *numericalin)
                 numericalin);
         return -1;
     }
+    /* Optional parameters */
+    /* "IstanbulModel" has been initialized as "no". If "Istanbul_material_model" is 
+    not set in the input file, "IstanbulModel" will just be "no". */
+    parsetext(fp, "Istanbul_material_model", 's', &IstanbulModel);
+    parsetext(fp, "basin_material_model", 's', &basinModel);
 
     hu_config_get_int_opt(fp, "output_mesh", &Param.theMeshOutFlag);
     hu_config_get_int_opt(fp, "enable_timing_barriers", &Param.theTimingBarriersFlag);
@@ -1190,19 +1282,40 @@ static int32_t parse_parameters(const char *numericalin)
                      include_hmgHalfSpace);
     }
 
-    if (strcasecmp(IstanbulModel, "yes") == 0)
-    {
+    if (strcasecmp(IstanbulModel, "yes") == 0) {
         includeIstanbulMatmodel = YES;
     }
-    else if (strcasecmp(IstanbulModel, "no") == 0)
-    {
+    else if (strcasecmp(IstanbulModel, "no") == 0) {
         includeIstanbulMatmodel = NO;
     }
-    else
-    {
+    else {
         solver_abort(__FUNCTION_NAME, NULL,
                      "Unknown response for Istanbul_material_model (yes or no): %s\n",
                      includeIstanbulMatmodel);
+    }
+    
+    if (strcasecmp(basinModel, "yes") == 0) {
+        includebasinMatmodel = YES;
+        if ((parsetext(fp, "basin_origin_latitude_deg", 'd', &Param.theBasinLat) != 0) ||
+        (parsetext(fp, "basin_origin_longitude_deg", 'd', &Param.theBasinLong) != 0))
+        {
+            fprintf(stderr, "Error reading basin origin from %s\n", numericalin);
+            return -1;
+        }
+        if (parsetext(fp, "basin_input_file", 's', &Param.basin_input_file) == 0) {
+            Param.basinData = readBasin(Param.basin_input_file, &Param.basinXCount, &Param.basinYCount, &Param.basinZCount, &Param.basinIncrement);
+        } else {
+            fprintf(stderr, "Error reading basin input file from %s\n", numericalin);
+            return -1;
+        }
+    }
+    else if (strcasecmp(basinModel, "no") == 0) {
+        includebasinMatmodel = NO;
+    }
+    else {
+        solver_abort(__FUNCTION_NAME, NULL,
+                     "Unknown response for basin_material_model (yes or no): %s\n",
+                     includebasinMatmodel);
     }
 
     /* read domain corners */
@@ -1293,6 +1406,7 @@ static int32_t parse_parameters(const char *numericalin)
     Param.includeHomogeneousHalfSpace = includeHmgHalfSpace;
 
     Param.IstanbulMaterialModel = includeIstanbulMatmodel;
+    Param.basinMaterialModel = includebasinMatmodel;
 
     strcpy(Param.theCheckPointingDirOut, checkpoint_path);
 
@@ -1313,6 +1427,7 @@ static int32_t parse_parameters(const char *numericalin)
     monitor_print("Include Incident Plane Waves:       %s\n", include_incident_planewaves);
     monitor_print("Include Homogeneous Halfspace:      %s\n", include_hmgHalfSpace);
     monitor_print("Include Istanbul Material model:    %s\n", IstanbulModel);
+    monitor_print("Include Basin Material model:       %s\n", basinModel);
     monitor_print("Use Parametric Q factor:            %s\n", use_parametricq);
     monitor_print("Constant value of Q factor:         %f\n", Param.theQConstant);
     monitor_print("Alpha value of Q factor:            %f\n", Param.theQAlpha);
@@ -1674,6 +1789,97 @@ replicateDB(const char *dbname)
     return;
 }
 
+
+int getIstanbulMaterial(cvmpayload_t *g_props, vector3D_t Istmatmodel_origin, double x_m, double y_m, double z_m) {
+    double output[4] = {0.0}, x_rel, y_rel;
+
+    x_rel = 4536400.00 + x_m - Istmatmodel_origin.x[0];
+    y_rel = 388500.00 + y_m - Istmatmodel_origin.x[1];
+
+    int res = material_property_relative_V10_local(y_rel, x_rel, -z_m, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
+    g_props->Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
+    g_props->Qp = 2.0 * g_props->Qs;
+
+    if (res != 0) {
+        if (Param.useProfile == NO) {
+            res = cvm_query(Global.theCVMEp, y_m, x_m, z_m, g_props);
+        }
+        else {
+            res = profile_query(z_m, g_props);
+        }
+    }
+    else {
+        g_props->Vs = output[0];
+        g_props->Vp = output[1];
+        g_props->rho = output[2];
+    }
+
+    return res;
+}
+
+// Function to compute the interpolated z value based on the nearest four points
+double interpolateZ(double **data, int x_count, double increment, double x_t, double y_t) {
+    // Find the index of the nearest point in the 'data' array based on x_t and y_t
+    int x1_index = (int)(x_t / increment);
+    int x2_index = x1_index + 1;
+    int y1_index = (int)(y_t / increment);
+    int y2_index = y1_index + 1;
+    // The four nearest points are labelled from the bottom left corner in a counter-clockwise direction
+    int nearest_point_index[4];
+    nearest_point_index[0] = (y1_index * x_count) + x1_index;
+    nearest_point_index[1] = (y1_index * x_count) + x2_index;
+    nearest_point_index[2] = (y2_index * x_count) + x2_index;
+    nearest_point_index[3] = (y2_index * x_count) + x1_index;
+    // Corresponding x, y, and z
+    double x1 = data[nearest_point_index[0]][0];
+    double y1 = data[nearest_point_index[0]][1];
+    double z[4];
+    for (int i = 0; i < 4; i++) {
+        z[i] = data[nearest_point_index[i]][2];
+    }
+    // Linear interpolation
+    double xi  = (x_t - x1)/increment*2.0 - 1.0;
+    double eta = (y_t - y1)/increment*2.0 - 1.0;
+    double N1 = 0.25*(1.0-xi)*(1.0-eta);
+    double N2 = 0.25*(1.0+xi)*(1.0-eta);
+    double N3 = 0.25*(1.0+xi)*(1.0+eta);
+    double N4 = 0.25*(1.0-xi)*(1.0+eta);
+    return N1*z[0] + N2*z[1] + N3*z[2] + N4*z[3];
+}
+
+// Function to determine if a point is in the basin
+int isInBasin(double **data, int x_count, int y_count, double increment, double x_t, double y_t, double z_t) {
+    if (x_t < 0 || x_t > (x_count-1)*increment || y_t < 0 || y_t > (y_count-1)*increment) {
+        return -1; // Outside the basin
+    }
+    double interpolatedZ = interpolateZ(data, x_count, increment, x_t, y_t);
+    // printf("Interpolated z: %f\n", interpolatedZ);
+    // Compare z_t with the z value of the nearest point to determine if the point is above the surface
+    if (z_t < interpolatedZ) {
+        return 0; // Above the surface (in the basin)
+    } else {
+        return -1; // Below or on the surface
+    }
+}
+
+int getBasinMaterial(cvmpayload_t *g_props, vector3D_t basinMatModel_origin, double x_m, double y_m, double z_m) {
+    int res = 0;
+    double x_rel = x_m - basinMatModel_origin.x[0];
+    double y_rel = y_m - basinMatModel_origin.x[1];
+    if (isInBasin(Param.basinData, Param.basinXCount, Param.basinYCount, Param.basinIncrement, x_rel, y_rel, z_m) == 0) {
+        // printf("The point is above the surface.\n");
+        getBasinMaterialProperties(g_props, z_m);
+    } else {
+        if (Param.useProfile == NO) {
+            res = cvm_query(Global.theCVMEp, y_m, x_m, z_m, g_props);
+        }
+        else {
+            res = profile_query(z_m, g_props);
+        }
+    }
+    return res;
+}
+
 /**
  * Assign values (material properties) to a leaf octant specified by
  * octleaf.  In order to refine the mesh, select the minimum Vs of 27
@@ -1687,6 +1893,7 @@ setrec(octant_t *leaf, double ticksize, void *data)
     cvmpayload_t g_props;     /* cvm record with ground properties */
     cvmpayload_t g_props_min; /* cvm record with the min Vs found */
     vector3D_t Istmatmodel_origin;
+    vector3D_t basinMatModel_origin;
 
     int i_x, i_y, i_z, n_points = 3;
     double points[3];
@@ -1704,6 +1911,13 @@ setrec(octant_t *leaf, double ticksize, void *data)
     if (Param.IstanbulMaterialModel == YES)
     {
         Istmatmodel_origin = compute_domain_coords_linearinterp(28.675, 40.9565,
+                                                                Param.theSurfaceCornersLong,
+                                                                Param.theSurfaceCornersLat,
+                                                                Param.theDomainY, Param.theDomainX);
+    }
+
+    if (Param.basinMaterialModel == YES) {
+        basinMatModel_origin = compute_domain_coords_linearinterp(Param.theBasinLong, Param.theBasinLat,
                                                                 Param.theSurfaceCornersLong,
                                                                 Param.theSurfaceCornersLat,
                                                                 Param.theDomainY, Param.theDomainX);
@@ -1776,35 +1990,19 @@ setrec(octant_t *leaf, double ticksize, void *data)
 
                 if (belongs2hmgHalfspace(y_m, x_m, z_m))
                     res = get_halfspaceproperties(&g_props);
-                else if (Param.IstanbulMaterialModel == YES)
-                {
-
-                    double output[4] = {0.0}, x_rel, y_rel;
-
-                    x_rel = 4536400.00 + x_m - Istmatmodel_origin.x[0];
-                    y_rel = 388500.00 + y_m - Istmatmodel_origin.x[1];
-
-                    res = material_property_relative_V10_local(y_rel, x_rel, -z_m, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
-                    g_props.Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
-                    g_props.Qp = 2.0 * g_props.Qs;
-
-                    if (res != 0)
-                    {
-                        if (Param.useProfile == NO)
-                        {
-                            res = cvm_query(Global.theCVMEp, y_m, x_m, z_m, &g_props);
-                        }
-                        else
-                        {
-                            res = profile_query(z_m, &g_props);
-                        }
-                    }
-                    else
-                    {
-                        g_props.Vs = output[0];
-                        g_props.Vp = output[1];
-                        g_props.rho = output[2];
-                    }
+                else if (Param.IstanbulMaterialModel == YES) {
+                    res = getIstanbulMaterial(&g_props, Istmatmodel_origin, x_m, y_m, z_m);
+                    // DEBUGGING PURPOSE: print all members in g_props
+                    // printf("g_props.Vs = %f\n", g_props.Vs);
+                    // printf("g_props.Vp = %f\n", g_props.Vp);
+                    // printf("g_props.rho = %f\n", g_props.rho);
+                    // printf("g_props.Qs = %f\n", g_props.Qs);
+                    // printf("g_props.Qp = %f\n", g_props.Qp);
+                    // printf("res = %d\n", res);
+                    // exit(1);
+                }
+                else if (Param.basinMaterialModel == YES) {
+                    res = getBasinMaterial(&g_props, basinMatModel_origin, x_m, y_m, z_m);
                 }
                 else if (Param.useProfile == NO)
                 {
@@ -8091,6 +8289,7 @@ mesh_correct_properties(etree_t *cvm)
     double points[3];
     int32_t lnid0;
     vector3D_t Istmatmodel_origin;
+    vector3D_t basinMatModel_origin;
 
     double Qs, Qp, Qk, L;
 
@@ -8101,6 +8300,13 @@ mesh_correct_properties(etree_t *cvm)
     if (Param.IstanbulMaterialModel == YES)
     {
         Istmatmodel_origin = compute_domain_coords_linearinterp(28.675, 40.9565,
+                                                                Param.theSurfaceCornersLong,
+                                                                Param.theSurfaceCornersLat,
+                                                                Param.theDomainY, Param.theDomainX);
+    }
+
+    if (Param.basinMaterialModel == YES) {
+        basinMatModel_origin = compute_domain_coords_linearinterp(Param.theBasinLong, Param.theBasinLat,
                                                                 Param.theSurfaceCornersLong,
                                                                 Param.theSurfaceCornersLat,
                                                                 Param.theDomainY, Param.theDomainX);
@@ -8179,31 +8385,11 @@ mesh_correct_properties(etree_t *cvm)
 
                     if (belongs2hmgHalfspace(east_m, north_m, depth_m))
                         res = get_halfspaceproperties(&g_props);
-                    else if (Param.IstanbulMaterialModel == YES)
-                    {
-
-                        double output[4] = {0.0}, x_rel, y_rel;
-
-                        x_rel = 4536400.00 + north_m - Istmatmodel_origin.x[0];
-                        y_rel = 388500.00 + east_m - Istmatmodel_origin.x[1];
-
-                        res = material_property_relative_V10_local(y_rel, x_rel, -depth_m, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
-                        g_props.Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
-                        g_props.Qp = 2.0 * g_props.Qs;
-
-                        if (res != 0)
-                        {
-                            if (Param.useProfile == NO)
-                                res = cvm_query(Global.theCVMEp, east_m, north_m, depth_m, &g_props);
-                            else
-                                res = profile_query(depth_m, &g_props);
-                        }
-                        else
-                        {
-                            g_props.Vs = output[0];
-                            g_props.Vp = output[1];
-                            g_props.rho = output[2];
-                        }
+                    else if (Param.IstanbulMaterialModel == YES) {
+                        res = getIstanbulMaterial(&g_props, Istmatmodel_origin, north_m, east_m, depth_m);
+                    }
+                    else if (Param.basinMaterialModel == YES) {
+                        res = getBasinMaterial(&g_props, basinMatModel_origin, north_m, east_m, depth_m);
                     }
                     else if (Param.useProfile == NO)
                     {
@@ -8251,33 +8437,15 @@ mesh_correct_properties(etree_t *cvm)
 
                             if (belongs2hmgHalfspace(east_m, north_m, depth_m))
                                 res = get_halfspaceproperties(&g_props);
-
-                            else if (Param.IstanbulMaterialModel == YES)
-                            {
-
-                                // Possibly redundant
-                                x_rel = 4536400.00 + north_m - Istmatmodel_origin.x[0];
-                                y_rel = 388500.00 + east_m - Istmatmodel_origin.x[1];
-
-                                res = material_property_relative_V10_local(y_rel, x_rel, -depth_k, output, Istmatmodel_origin.x[1], Istmatmodel_origin.x[0]);
-
-                                if (res != 0)
-                                {
-                                    if (Param.useProfile == NO)
-                                    {
-                                        res = cvm_query(Global.theCVMEp, east_m, north_m, depth_k, &g_props);
-                                    }
-                                    else
-                                    {
-                                        res = profile_query(depth_k, &g_props);
-                                    }
-                                }
-                                else
-                                {
-                                    g_props.Vs = output[0];
-                                    g_props.Vp = output[1];
-                                    g_props.rho = output[2];
-                                }
+                            /* NOTE: This section is a little bit different from the previous 
+                            Istanbul Material Model. g_props->Qs and g_props->Qp are not 
+                            assigned in the original section. But it should be fine if they are 
+                            still assigned. */
+                            else if (Param.IstanbulMaterialModel == YES) {
+                                res = getIstanbulMaterial(&g_props, Istmatmodel_origin, north_m, east_m, depth_k);
+                            }
+                            else if (Param.basinMaterialModel == YES) {
+                                res = getBasinMaterial(&g_props, basinMatModel_origin, north_m, east_m, depth_k);
                             }
                             else if (Param.useProfile == NO)
                             {
