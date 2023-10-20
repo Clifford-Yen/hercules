@@ -225,11 +225,6 @@ double **readBasin(char *filename, int *x_count, int *y_count, int *z_count, dou
     // Calculate the total number of lines in the file
     int total_lines = (*x_count) * (*y_count) * (*z_count);
     // Create a 2D array to store the data
-    // NOTE: This way doen't work for MPI_Bcast. The memory blocks pre-allocated this way are not continuous.
-    // double **data = (double **)malloc(total_lines * sizeof(double *));
-    // for (i = 0; i < total_lines; i++) {
-    //     data[i] = (double *)malloc(3 * sizeof(double));
-    // }
     double **data = malloc2dDouble(total_lines, 3);
     // Read the data and store it in the array
     for (i = 0; i < total_lines; i++) {
@@ -360,7 +355,7 @@ static struct Param_t
     .theUseCheckPoint = 0,
     .theTimingBarriersFlag = 0,
     .the4DOutSize = 0,
-    .theMeshOutFlag = DO_OUTPUT,
+    .theMeshOutFlag = 0,
     .useProfile = NO,
     .theNumberOfLayers = 0};
 
@@ -777,10 +772,8 @@ static int32_t parse_parameters(const char *numericalin)
      */
     const char *physicsin = numericalin;
 
-    int32_t samples, rate;
-    int number_output_planes, number_output_stations,
-        damping_statistics, use_checkpoint, checkpointing_rate,
-        step_meshing;
+    int32_t samples;
+    int damping_statistics, step_meshing;
 
     double freq, vscut,
         region_origin_latitude_deg, region_origin_longitude_deg,
@@ -797,16 +790,21 @@ static int32_t parse_parameters(const char *numericalin)
         use_parametricq[64],
         stiffness_calculation_method[64],
         print_matrix_k[64],
-        print_station_velocities[64],
-        print_station_accelerations[64],
-        mesh_coordinates_for_matlab[64],
-        implement_drm[64],
         use_infinite_qk[64],
         include_topography[64],
         include_incident_planewaves[64],
         include_hmgHalfSpace[64];
     /* Optional parameters */
-    char IstanbulModel[64] = "no",
+    int32_t rate = 1000000;
+    int number_output_planes = 0, 
+        number_output_stations = 0, 
+        use_checkpoint = 0, 
+        checkpointing_rate = 0;
+    char print_station_velocities[64] = "no",
+        print_station_accelerations[64] = "no",
+        mesh_coordinates_for_matlab[64] = "no",
+        implement_drm[64] = "no",
+        IstanbulModel[64] = "no",
         basinModel[64] = "no";
 
     damping_type_t typeOfDamping = -1;
@@ -923,28 +921,17 @@ static int32_t parse_parameters(const char *numericalin)
         (parsetext(fp, "simulation_delta_time_sec", 'd', &deltaT) != 0) ||
         (parsetext(fp, "softening_factor", 'd', &softening_factor) != 0) ||
         (parsetext(fp, "use_progressive_meshing", 'i', &step_meshing) != 0) ||
-        (parsetext(fp, "simulation_output_rate", 'i', &rate) != 0) ||
-        (parsetext(fp, "number_output_planes", 'i', &number_output_planes) != 0) ||
-        (parsetext(fp, "number_output_stations", 'i', &number_output_stations) != 0) ||
         (parsetext(fp, "the_threshold_damping", 'd', &threshold_damping) != 0) ||
         (parsetext(fp, "the_threshold_Vp_over_Vs", 'd', &threshold_VpVs) != 0) ||
         (parsetext(fp, "do_damping_statistics", 'i', &damping_statistics) != 0) ||
-        (parsetext(fp, "use_checkpoint", 'i', &use_checkpoint) != 0) ||
-        (parsetext(fp, "checkpointing_rate", 'i', &checkpointing_rate) != 0) ||
-        (parsetext(fp, "checkpoint_path", 's', &checkpoint_path) != 0) ||
         (parsetext(fp, "4D_output_file", 's', &Param.FourDOutFile) != 0) ||
         (parsetext(fp, "cvmdb_input_file", 's', &Param.cvmdb_input_file) != 0) ||
-        (parsetext(fp, "mesh_etree_output_file", 's', &Param.mesh_etree_output_file) != 0) ||
         (parsetext(fp, "planes_input_file", 's', &Param.planes_input_file) != 0) ||
         (parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlinear_analysis) != 0) ||
         (parsetext(fp, "stiffness_calculation_method", 's', &stiffness_calculation_method) != 0) ||
         (parsetext(fp, "print_matrix_k", 's', &print_matrix_k) != 0) ||
-        (parsetext(fp, "print_station_velocities", 's', &print_station_velocities) != 0) ||
-        (parsetext(fp, "print_station_accelerations", 's', &print_station_accelerations) != 0) ||
         (parsetext(fp, "include_buildings", 's', &include_buildings) != 0) ||
         (parsetext(fp, "use_parametric_q_factor", 's', &use_parametricq) != 0) ||
-        (parsetext(fp, "mesh_coordinates_for_matlab", 's', &mesh_coordinates_for_matlab) != 0) ||
-        (parsetext(fp, "implement_drm", 's', &implement_drm) != 0) ||
         (parsetext(fp, "include_topography", 's', &include_topography) != 0) ||
         (parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves) != 0) ||
         (parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace) != 0) ||
@@ -956,8 +943,21 @@ static int32_t parse_parameters(const char *numericalin)
         return -1;
     }
     /* Optional parameters */
-    /* "IstanbulModel" has been initialized as "no". If "Istanbul_material_model" is 
-    not set in the input file, "IstanbulModel" will just be "no". */
+    parsetext(fp, "mesh_etree_output_file", 's', &Param.mesh_etree_output_file);
+    parsetext(fp, "simulation_output_rate", 'i', &rate);
+    parsetext(fp, "checkpoint_path", 's', &checkpoint_path);
+    /* These parameters have been initialized as 0. If they are
+    not set in the input file, their values will just be 0. */
+    parsetext(fp, "number_output_planes", 'i', &number_output_planes);
+    parsetext(fp, "number_output_stations", 'i', &number_output_stations);
+    parsetext(fp, "use_checkpoint", 'i', &use_checkpoint);
+    parsetext(fp, "checkpointing_rate", 'i', &checkpointing_rate);
+    /* These parameters have been initialized as "no". If they are
+    not set in the input file, their values will just be "no". */
+    parsetext(fp, "print_station_velocities", 's', &print_station_velocities);
+    parsetext(fp, "print_station_accelerations", 's', &print_station_accelerations);
+    parsetext(fp, "mesh_coordinates_for_matlab", 's', &mesh_coordinates_for_matlab);
+    parsetext(fp, "implement_drm", 's', &implement_drm);
     parsetext(fp, "Istanbul_material_model", 's', &IstanbulModel);
     parsetext(fp, "basin_material_model", 's', &basinModel);
 
@@ -1044,7 +1044,7 @@ static int32_t parse_parameters(const char *numericalin)
     if (number_output_stations < 0)
     {
         fprintf(stderr, "Illegal number of output stations %d\n",
-                number_output_planes);
+                number_output_stations);
         return -1;
     }
 
@@ -1853,7 +1853,6 @@ int isInBasin(double **data, int x_count, int y_count, double increment, double 
         return -1; // Outside the basin
     }
     double interpolatedZ = interpolateZ(data, x_count, increment, x_t, y_t);
-    // printf("Interpolated z: %f\n", interpolatedZ);
     // Compare z_t with the z value of the nearest point to determine if the point is above the surface
     if (z_t < interpolatedZ) {
         return 0; // Above the surface (in the basin)
@@ -1867,7 +1866,6 @@ int getBasinMaterial(cvmpayload_t *g_props, vector3D_t basinMatModel_origin, dou
     double x_rel = x_m - basinMatModel_origin.x[0];
     double y_rel = y_m - basinMatModel_origin.x[1];
     if (isInBasin(Param.basinData, Param.basinXCount, Param.basinYCount, Param.basinIncrement, x_rel, y_rel, z_m) == 0) {
-        // printf("The point is above the surface.\n");
         getBasinMaterialProperties(g_props, z_m);
     } else {
         if (Param.useProfile == NO) {
@@ -1992,14 +1990,6 @@ setrec(octant_t *leaf, double ticksize, void *data)
                     res = get_halfspaceproperties(&g_props);
                 else if (Param.IstanbulMaterialModel == YES) {
                     res = getIstanbulMaterial(&g_props, Istmatmodel_origin, x_m, y_m, z_m);
-                    // DEBUGGING PURPOSE: print all members in g_props
-                    // printf("g_props.Vs = %f\n", g_props.Vs);
-                    // printf("g_props.Vp = %f\n", g_props.Vp);
-                    // printf("g_props.rho = %f\n", g_props.rho);
-                    // printf("g_props.Qs = %f\n", g_props.Qs);
-                    // printf("g_props.Qp = %f\n", g_props.Qp);
-                    // printf("res = %d\n", res);
-                    // exit(1);
                 }
                 else if (Param.basinMaterialModel == YES) {
                     res = getBasinMaterial(&g_props, basinMatModel_origin, x_m, y_m, z_m);
@@ -8045,7 +8035,7 @@ load_output_parameters(const char *numericalin, output_parameters_t *params)
         ret = parsetext(fp, "output_velocity", 'i', &value);
 
         if (0 == ret && 0 != value)
-        { /* output_displacement = 1 in config */
+        { /* output_velocity = 1 in config */
             ret = read_config_string(fp, "output_velocity_file",
                                      filename, LINESIZE);
 
