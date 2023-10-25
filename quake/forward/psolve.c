@@ -773,15 +773,15 @@ static int32_t parse_parameters(const char *numericalin)
     const char *physicsin = numericalin;
 
     int32_t samples;
-    int damping_statistics, step_meshing;
+    int step_meshing;
 
     double freq, vscut,
         region_origin_latitude_deg, region_origin_longitude_deg,
         region_azimuth_leftface_deg,
         region_depth_shallow_m, region_length_east_m,
         region_length_north_m, region_depth_deep_m,
-        startT, endT, deltaT, softening_factor,
-        threshold_damping, threshold_VpVs, freq_vel,
+        startT, endT, deltaT,
+        threshold_damping, threshold_VpVs,
         qconstant, qalpha, qbeta;
     char type_of_damping[64],
         checkpoint_path[256],
@@ -789,7 +789,6 @@ static int32_t parse_parameters(const char *numericalin)
         include_nonlinear_analysis[64],
         use_parametricq[64],
         stiffness_calculation_method[64],
-        print_matrix_k[64],
         use_infinite_qk[64],
         include_topography[64],
         include_incident_planewaves[64],
@@ -798,9 +797,13 @@ static int32_t parse_parameters(const char *numericalin)
     int32_t rate = 1000000;
     int number_output_planes = 0, 
         number_output_stations = 0, 
+        damping_statistics = 0,
         use_checkpoint = 0, 
         checkpointing_rate = 0;
-    char print_station_velocities[64] = "no",
+    double freq_vel = 0.,
+        softening_factor = 0;
+    char print_matrix_k[64] = "no",
+        print_station_velocities[64] = "no",
         print_station_accelerations[64] = "no",
         mesh_coordinates_for_matlab[64] = "no",
         implement_drm[64] = "no",
@@ -884,6 +887,46 @@ static int32_t parse_parameters(const char *numericalin)
                      type_of_damping);
     }
 
+    if (typeOfDamping >= BKT) {
+        /* Conditional Parameters */
+        if ((parsetext(fp, "use_parametric_q_factor", 's', &use_parametricq) != 0) ||
+            (parsetext(fp, "use_infinite_qk", 's', &use_infinite_qk) != 0))
+            {
+                fprintf(stderr, "Error reading q factor related parameters from %s\n", numericalin);
+                return -1;
+            }
+
+        if (strcasecmp(use_parametricq, "yes") == 0) {
+            have_parametricq = YES;
+        } else if (strcasecmp(use_parametricq, "no") == 0) {
+            have_parametricq = NO;
+        } else {
+            solver_abort(__FUNCTION_NAME, NULL,
+                        "Unknown response for use new q factor (yes or no): %s\n",
+                        use_parametricq);
+        }
+
+        if (strcasecmp(use_infinite_qk, "yes") == 0) {
+            useInfQk = YES;
+        } else if (strcasecmp(use_infinite_qk, "no") == 0) {
+            useInfQk = NO;
+        } else {
+            solver_abort(__FUNCTION_NAME, NULL,
+                        "Unknown response using infinite Qk (yes or no): %s\n",
+                        use_infinite_qk);
+        }
+
+        if (have_parametricq == YES) {
+            if ((parsetext(fp, "parametric_q_factor_constant", 'd', &qconstant) != 0) ||
+                (parsetext(fp, "parametric_q_factor_alpha", 'd', &qalpha) != 0) ||
+                (parsetext(fp, "parametric_q_factor_beta", 'd', &qbeta) != 0))
+            {
+                fprintf(stderr, "Error reading parametric q factor from %s\n", numericalin);
+                return -1;
+            }
+        }
+    }
+
     fclose(fp); /* physics.in */
 
     if ((fp = fopen(numericalin, "r")) == NULL)
@@ -911,32 +954,24 @@ static int32_t parse_parameters(const char *numericalin)
 
     /* numerical.in parse texts */
     if ((parsetext(fp, "simulation_wave_max_freq_hz", 'd', &freq) != 0) ||
-        (parsetext(fp, "parametric_q_factor_constant", 'd', &qconstant) != 0) ||
-        (parsetext(fp, "parametric_q_factor_alpha", 'd', &qalpha) != 0) ||
-        (parsetext(fp, "parametric_q_factor_beta", 'd', &qbeta) != 0) ||
         (parsetext(fp, "simulation_node_per_wavelength", 'i', &samples) != 0) ||
         (parsetext(fp, "simulation_shear_velocity_min", 'd', &vscut) != 0) ||
         (parsetext(fp, "simulation_start_time_sec", 'd', &startT) != 0) ||
         (parsetext(fp, "simulation_end_time_sec", 'd', &endT) != 0) ||
         (parsetext(fp, "simulation_delta_time_sec", 'd', &deltaT) != 0) ||
-        (parsetext(fp, "softening_factor", 'd', &softening_factor) != 0) ||
         (parsetext(fp, "use_progressive_meshing", 'i', &step_meshing) != 0) ||
         (parsetext(fp, "the_threshold_damping", 'd', &threshold_damping) != 0) ||
         (parsetext(fp, "the_threshold_Vp_over_Vs", 'd', &threshold_VpVs) != 0) ||
-        (parsetext(fp, "do_damping_statistics", 'i', &damping_statistics) != 0) ||
-        (parsetext(fp, "4D_output_file", 's', &Param.FourDOutFile) != 0) ||
+        /*  This parameter is used in solver_output_seq() function in psolve.c, 
+            but this function is not called in the code anywhere. */
+        // (parsetext(fp, "4D_output_file", 's', &Param.FourDOutFile) != 0) ||
         (parsetext(fp, "cvmdb_input_file", 's', &Param.cvmdb_input_file) != 0) ||
-        (parsetext(fp, "planes_input_file", 's', &Param.planes_input_file) != 0) ||
         (parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlinear_analysis) != 0) ||
         (parsetext(fp, "stiffness_calculation_method", 's', &stiffness_calculation_method) != 0) ||
-        (parsetext(fp, "print_matrix_k", 's', &print_matrix_k) != 0) ||
         (parsetext(fp, "include_buildings", 's', &include_buildings) != 0) ||
-        (parsetext(fp, "use_parametric_q_factor", 's', &use_parametricq) != 0) ||
         (parsetext(fp, "include_topography", 's', &include_topography) != 0) ||
         (parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves) != 0) ||
-        (parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace) != 0) ||
-        (parsetext(fp, "simulation_velocity_profile_freq_hz", 'd', &freq_vel) != 0) ||
-        (parsetext(fp, "use_infinite_qk", 's', &use_infinite_qk) != 0))
+        (parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace) != 0))
     {
         fprintf(stderr, "Error parsing simulation parameters from %s\n",
                 numericalin);
@@ -946,14 +981,19 @@ static int32_t parse_parameters(const char *numericalin)
     parsetext(fp, "mesh_etree_output_file", 's', &Param.mesh_etree_output_file);
     parsetext(fp, "simulation_output_rate", 'i', &rate);
     parsetext(fp, "checkpoint_path", 's', &checkpoint_path);
+    parsetext(fp, "planes_input_file", 's', &Param.planes_input_file);
     /* These parameters have been initialized as 0. If they are
     not set in the input file, their values will just be 0. */
     parsetext(fp, "number_output_planes", 'i', &number_output_planes);
     parsetext(fp, "number_output_stations", 'i', &number_output_stations);
+    parsetext(fp, "softening_factor", 'd', &softening_factor);
+    parsetext(fp, "do_damping_statistics", 'i', &damping_statistics);
+    parsetext(fp, "simulation_velocity_profile_freq_hz", 'd', &freq_vel);
     parsetext(fp, "use_checkpoint", 'i', &use_checkpoint);
     parsetext(fp, "checkpointing_rate", 'i', &checkpointing_rate);
     /* These parameters have been initialized as "no". If they are
     not set in the input file, their values will just be "no". */
+    parsetext(fp, "print_matrix_k", 's', &print_matrix_k);
     parsetext(fp, "print_station_velocities", 's', &print_station_velocities);
     parsetext(fp, "print_station_accelerations", 's', &print_station_accelerations);
     parsetext(fp, "mesh_coordinates_for_matlab", 's', &mesh_coordinates_for_matlab);
@@ -1192,21 +1232,6 @@ static int32_t parse_parameters(const char *numericalin)
                      include_buildings);
     }
 
-    if (strcasecmp(use_parametricq, "yes") == 0)
-    {
-        have_parametricq = YES;
-    }
-    else if (strcasecmp(use_parametricq, "no") == 0)
-    {
-        have_parametricq = NO;
-    }
-    else
-    {
-        solver_abort(__FUNCTION_NAME, NULL,
-                     "Unknown response for use new q factor (yes or no): %s\n",
-                     use_parametricq);
-    }
-
     if (strcasecmp(implement_drm, "yes") == 0)
     {
         implementdrm = YES;
@@ -1220,21 +1245,6 @@ static int32_t parse_parameters(const char *numericalin)
         solver_abort(__FUNCTION_NAME, NULL,
                      "Unknown response for impelement_drm (yes or no): %s\n",
                      implement_drm);
-    }
-
-    if (strcasecmp(use_infinite_qk, "yes") == 0)
-    {
-        useInfQk = YES;
-    }
-    else if (strcasecmp(use_infinite_qk, "no") == 0)
-    {
-        useInfQk = NO;
-    }
-    else
-    {
-        solver_abort(__FUNCTION_NAME, NULL,
-                     "Unknown response using infinite Qk (yes or no): %s\n",
-                     use_infinite_qk);
     }
 
     if (strcasecmp(include_topography, "yes") == 0)
@@ -1428,10 +1438,14 @@ static int32_t parse_parameters(const char *numericalin)
     monitor_print("Include Homogeneous Halfspace:      %s\n", include_hmgHalfSpace);
     monitor_print("Include Istanbul Material model:    %s\n", IstanbulModel);
     monitor_print("Include Basin Material model:       %s\n", basinModel);
-    monitor_print("Use Parametric Q factor:            %s\n", use_parametricq);
-    monitor_print("Constant value of Q factor:         %f\n", Param.theQConstant);
-    monitor_print("Alpha value of Q factor:            %f\n", Param.theQAlpha);
-    monitor_print("Beta value of Q factor:             %f\n", Param.theQBeta);
+    if (typeOfDamping >= BKT) {
+        monitor_print("Use Parametric Q factor:            %s\n", use_parametricq);
+        if (have_parametricq == YES) {
+            monitor_print("Constant value of Q factor:         %f\n", Param.theQConstant);
+            monitor_print("Alpha value of Q factor:            %f\n", Param.theQAlpha);
+            monitor_print("Beta value of Q factor:             %f\n", Param.theQBeta);
+        }
+    }
     monitor_print("\n-------------------------------------------------\n\n");
 
     fflush(Param.theMonitorFileFp);
@@ -1789,7 +1803,9 @@ replicateDB(const char *dbname)
     return;
 }
 
-
+/*
+ * Originally developed by Wenyang and Doriam, refactored into this function by Clifford
+*/
 int getIstanbulMaterial(cvmpayload_t *g_props, vector3D_t Istmatmodel_origin, double x_m, double y_m, double z_m) {
     double output[4] = {0.0}, x_rel, y_rel;
 
@@ -1861,6 +1877,9 @@ int isInBasin(double **data, int x_count, int y_count, double increment, double 
     }
 }
 
+/*
+ * Implemented by Clifford
+*/
 int getBasinMaterial(cvmpayload_t *g_props, vector3D_t basinMatModel_origin, double x_m, double y_m, double z_m) {
     int res = 0;
     double x_rel = x_m - basinMatModel_origin.x[0];
@@ -3693,7 +3712,7 @@ static void solver_set_critical_T()
 
         /* Loop over the six extreme values */
         MPI_Barrier(comm_solver);
-        for (extreme_index = 0; extreme_index < 13; extreme_index++)
+        for (extreme_index = 0; extreme_index < 6; extreme_index++)
         {
             MPI_Barrier(comm_solver);
             if (local_extremes[extreme_index] == global_extremes[extreme_index])
