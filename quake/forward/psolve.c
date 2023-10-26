@@ -785,7 +785,6 @@ static int32_t parse_parameters(const char *numericalin)
         qconstant, qalpha, qbeta;
     char type_of_damping[64],
         checkpoint_path[256],
-        include_buildings[64],
         include_nonlinear_analysis[64],
         use_parametricq[64],
         stiffness_calculation_method[64],
@@ -806,6 +805,7 @@ static int32_t parse_parameters(const char *numericalin)
         print_station_velocities[64] = "no",
         print_station_accelerations[64] = "no",
         mesh_coordinates_for_matlab[64] = "no",
+        include_buildings[64] = "no",
         implement_drm[64] = "no",
         IstanbulModel[64] = "no",
         basinModel[64] = "no";
@@ -968,7 +968,6 @@ static int32_t parse_parameters(const char *numericalin)
         (parsetext(fp, "cvmdb_input_file", 's', &Param.cvmdb_input_file) != 0) ||
         (parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlinear_analysis) != 0) ||
         (parsetext(fp, "stiffness_calculation_method", 's', &stiffness_calculation_method) != 0) ||
-        (parsetext(fp, "include_buildings", 's', &include_buildings) != 0) ||
         (parsetext(fp, "include_topography", 's', &include_topography) != 0) ||
         (parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves) != 0) ||
         (parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace) != 0))
@@ -997,6 +996,7 @@ static int32_t parse_parameters(const char *numericalin)
     parsetext(fp, "print_station_velocities", 's', &print_station_velocities);
     parsetext(fp, "print_station_accelerations", 's', &print_station_accelerations);
     parsetext(fp, "mesh_coordinates_for_matlab", 's', &mesh_coordinates_for_matlab);
+    parsetext(fp, "include_buildings", 's', &include_buildings);
     parsetext(fp, "implement_drm", 's', &implement_drm);
     parsetext(fp, "Istanbul_material_model", 's', &IstanbulModel);
     parsetext(fp, "basin_material_model", 's', &basinModel);
