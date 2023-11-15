@@ -11,6 +11,9 @@
 # * For an optimized executable:
 #	CFLAGS = -O2
 #
+# * For an even more optimized executable:
+	CFLAGS = -Ofast
+#
 # check other platform specific flags below.
 #
 -include $(WORKDIR)/user.mk
@@ -38,8 +41,14 @@ ifeq ($(SYSTEM), Frontera)
         CXX     = mpicxx
         LD	= mpicxx
         CFLAGS  += -DBIGBEN
-        CC  += -I/opt/apps/intel19/gsl/2.6/include/
-        LDFLAGS += -L/opt/apps/intel19/gsl/2.6/lib/
+# CC  += -I/opt/apps/intel19/gsl/2.6/include/
+# LDFLAGS += -L/opt/apps/intel19/gsl/2.6/lib/
+# NOTE: The special envrionment variables TACC_GSL_INC and TACC_GSL_LIB 
+# can be used on Frontera to link the GSL library, but users must load
+# the GSL module before compiling and launching Hercules with the command
+# `module load gsl` or `ml gsl`.
+		CC += -I$$TACC_GSL_INC
+		LDFLAGS += -L$$TACC_GSL_LIB
         LDFLAGS += -lgsl -lgslcblas
         #LDFLAGS +=
         #ifdef IOBUF_INC

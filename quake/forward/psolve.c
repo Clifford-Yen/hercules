@@ -1726,7 +1726,7 @@ replicateDB(const char *dbname)
         }
 
         MPI_Bcast(&filesize, sizeof(off_t), MPI_CHAR, 0, replica_comm);
-        theDBSize = filesize;
+        // theDBSize = filesize; // this is not used anywhere and will make building process fail
 
         if ((filebuf = malloc(FILEBUFSIZE)) == NULL)
         {

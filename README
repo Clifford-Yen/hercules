@@ -1,6 +1,7 @@
 For instructions on how to build, install and execute Hercules, please read
-the documentation on the GitHub wiki pages. Some general description of the
-core components in this directory are given next.
+the documentation: https://clifford-yen.github.io/HerculesDoc/index.html 
+Some general description of the core components in this directory are given 
+next.
 
 --------------------------------------------------------------------------
 octor		- Hercules mesh generator/partitioner/load balancer module
