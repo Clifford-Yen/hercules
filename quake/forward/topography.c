@@ -1180,6 +1180,10 @@ int topo_crossings ( double xo, double yo, double zo, double esize ) {
 
 }
 
+/* 
+ * Returns 1 if the element becomes air when the topography is considered.
+ * Returns 0 otherwise.
+ */
 int topo_setrec ( octant_t *leaf, double ticksize,
                    edata_t *edata, etree_t *cvm ) {
 
@@ -1195,6 +1199,7 @@ int topo_setrec ( octant_t *leaf, double ticksize,
     return 0;
 }
 
+// Note from Clifford: It seems topo_toexpand does not return 0 in any case.
 /**
  * Return  1 if an element is in the topography and needs to be refined,
  * Return  0 if an element is air element and does not need to be refined,

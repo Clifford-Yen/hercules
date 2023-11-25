@@ -780,7 +780,7 @@ static int32_t parse_parameters(const char *numericalin)
         region_azimuth_leftface_deg,
         region_depth_shallow_m, region_length_east_m,
         region_length_north_m, region_depth_deep_m,
-        startT, endT, deltaT,
+        endT, deltaT,
         threshold_damping, threshold_VpVs,
         qconstant, qalpha, qbeta;
     char type_of_damping[64],
@@ -789,7 +789,6 @@ static int32_t parse_parameters(const char *numericalin)
         use_parametricq[64],
         stiffness_calculation_method[64],
         use_infinite_qk[64],
-        include_topography[64],
         include_incident_planewaves[64],
         include_hmgHalfSpace[64];
     /* Optional parameters */
@@ -800,13 +799,15 @@ static int32_t parse_parameters(const char *numericalin)
         use_checkpoint = 0, 
         checkpointing_rate = 0;
     double freq_vel = 0.,
-        softening_factor = 0;
+        softening_factor = 0,
+        startT = 0.;
     char print_matrix_k[64] = "no",
         print_station_velocities[64] = "no",
         print_station_accelerations[64] = "no",
         mesh_coordinates_for_matlab[64] = "no",
         include_buildings[64] = "no",
         implement_drm[64] = "no",
+        include_topography[64] = "no",
         IstanbulModel[64] = "no",
         basinModel[64] = "no";
 
@@ -956,7 +957,6 @@ static int32_t parse_parameters(const char *numericalin)
     if ((parsetext(fp, "simulation_wave_max_freq_hz", 'd', &freq) != 0) ||
         (parsetext(fp, "simulation_node_per_wavelength", 'i', &samples) != 0) ||
         (parsetext(fp, "simulation_shear_velocity_min", 'd', &vscut) != 0) ||
-        (parsetext(fp, "simulation_start_time_sec", 'd', &startT) != 0) ||
         (parsetext(fp, "simulation_end_time_sec", 'd', &endT) != 0) ||
         (parsetext(fp, "simulation_delta_time_sec", 'd', &deltaT) != 0) ||
         (parsetext(fp, "use_progressive_meshing", 'i', &step_meshing) != 0) ||
@@ -968,7 +968,6 @@ static int32_t parse_parameters(const char *numericalin)
         (parsetext(fp, "cvmdb_input_file", 's', &Param.cvmdb_input_file) != 0) ||
         (parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlinear_analysis) != 0) ||
         (parsetext(fp, "stiffness_calculation_method", 's', &stiffness_calculation_method) != 0) ||
-        (parsetext(fp, "include_topography", 's', &include_topography) != 0) ||
         (parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves) != 0) ||
         (parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace) != 0))
     {
@@ -985,6 +984,7 @@ static int32_t parse_parameters(const char *numericalin)
     not set in the input file, their values will just be 0. */
     parsetext(fp, "number_output_planes", 'i', &number_output_planes);
     parsetext(fp, "number_output_stations", 'i', &number_output_stations);
+    parsetext(fp, "simulation_start_time_sec", 'd', &startT);
     parsetext(fp, "softening_factor", 'd', &softening_factor);
     parsetext(fp, "do_damping_statistics", 'i', &damping_statistics);
     parsetext(fp, "simulation_velocity_profile_freq_hz", 'd', &freq_vel);
@@ -998,6 +998,7 @@ static int32_t parse_parameters(const char *numericalin)
     parsetext(fp, "mesh_coordinates_for_matlab", 's', &mesh_coordinates_for_matlab);
     parsetext(fp, "include_buildings", 's', &include_buildings);
     parsetext(fp, "implement_drm", 's', &implement_drm);
+    parsetext(fp, "include_topography", 's', &include_topography);
     parsetext(fp, "Istanbul_velocity_model", 's', &IstanbulModel);
     parsetext(fp, "basin_velocity_model", 's', &basinModel);
 
