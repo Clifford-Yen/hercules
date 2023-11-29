@@ -217,8 +217,6 @@ drm_planewaves_initparameters ( const char *parametersin ) {
 			( parsetext(fp, "DRMBox_element_size",               'd', &drmbox_esize                  ) != 0) ||
 			( parsetext(fp, "DRM_xo",                            'd', &drmbox_xo                     ) != 0) ||
 			( parsetext(fp, "DRM_yo",                            'd', &drmbox_yo                     ) != 0) ||
-			( parsetext(fp, "ug_alongstrike",                    's', &ugstr_file                    ) != 0) ||
-			( parsetext(fp, "ug_alongnormal",                    's', &ugnrm_file                    ) != 0) ||
 			( parsetext(fp, "ug_timestep",                       'd', &ug_dt                         ) != 0) ||
 			( parsetext(fp, "no_components",                     'i', &no_comp                       ) != 0) ||
 			( parsetext(fp, "Ts",                                'd', &Ts                            ) != 0) ||
@@ -253,6 +251,7 @@ drm_planewaves_initparameters ( const char *parametersin ) {
 	} else if ( strcasecmp(type_of_fnc, "time_hist") == 0 ) {
 		fnc_type = THST;
 
+		parsetext(fp, "ug_alongstrike", 's', &ugstr_file);
 		if ( ( fp_ugstr   = fopen ( ugstr_file, "r") ) == NULL ) {
 			fprintf(stderr, "Error opening file of displ ground motion along strike \n" );
 			return -1;
@@ -261,6 +260,7 @@ drm_planewaves_initparameters ( const char *parametersin ) {
 		fscanf( fp_ugstr,   " %i ", &no_datastr );
 
 		if ( no_comp == 2 ) {
+			parsetext(fp, "ug_alongnormal", 's', &ugnrm_file);
 			if ( ( fp_ugnrm   = fopen ( ugnrm_file, "r") ) == NULL ) {
 				fprintf(stderr, "Error opening file of displ ground motion along normal to strike \n" );
 				return -1;

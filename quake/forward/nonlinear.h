@@ -28,7 +28,7 @@
 /* -------------------------------------------------------------------------- */
 typedef enum {
 
-    RATE_DEPENDANT = 0, RATE_INDEPENDANT
+    RATE_DEPENDENT = 0, RATE_INDEPENDENT
 
 } plasticitytype_t;
 

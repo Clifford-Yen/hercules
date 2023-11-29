@@ -773,7 +773,6 @@ static int32_t parse_parameters(const char *numericalin)
     const char *physicsin = numericalin;
 
     int32_t samples;
-    int step_meshing;
 
     double freq, vscut,
         region_origin_latitude_deg, region_origin_longitude_deg,
@@ -785,19 +784,16 @@ static int32_t parse_parameters(const char *numericalin)
         qconstant, qalpha, qbeta;
     char type_of_damping[64],
         checkpoint_path[256],
-        include_nonlinear_analysis[64],
         use_parametricq[64],
-        stiffness_calculation_method[64],
-        use_infinite_qk[64],
-        include_incident_planewaves[64],
-        include_hmgHalfSpace[64];
+        use_infinite_qk[64];
     /* Optional parameters */
     int32_t rate = 1000000;
     int number_output_planes = 0, 
         number_output_stations = 0, 
         damping_statistics = 0,
         use_checkpoint = 0, 
-        checkpointing_rate = 0;
+        checkpointing_rate = 0,
+        step_meshing = 1;
     double freq_vel = 0.,
         softening_factor = 0,
         startT = 0.;
@@ -809,7 +805,11 @@ static int32_t parse_parameters(const char *numericalin)
         implement_drm[64] = "no",
         include_topography[64] = "no",
         IstanbulModel[64] = "no",
-        basinModel[64] = "no";
+        basinModel[64] = "no",
+        include_nonlinear_analysis[64] = "no",
+        include_incident_planewaves[64] = "no",
+        include_hmgHalfSpace[64] = "no",
+        stiffness_calculation_method[64] = "effective";
 
     damping_type_t typeOfDamping = -1;
     stiffness_type_t stiffness_method = -1;
@@ -959,17 +959,12 @@ static int32_t parse_parameters(const char *numericalin)
         (parsetext(fp, "simulation_shear_velocity_min", 'd', &vscut) != 0) ||
         (parsetext(fp, "simulation_end_time_sec", 'd', &endT) != 0) ||
         (parsetext(fp, "simulation_delta_time_sec", 'd', &deltaT) != 0) ||
-        (parsetext(fp, "use_progressive_meshing", 'i', &step_meshing) != 0) ||
         (parsetext(fp, "the_threshold_damping", 'd', &threshold_damping) != 0) ||
         (parsetext(fp, "the_threshold_Vp_over_Vs", 'd', &threshold_VpVs) != 0) ||
         /*  This parameter is used in solver_output_seq() function in psolve.c, 
             but this function is not called in the code anywhere. */
         // (parsetext(fp, "4D_output_file", 's', &Param.FourDOutFile) != 0) ||
-        (parsetext(fp, "cvmdb_input_file", 's', &Param.cvmdb_input_file) != 0) ||
-        (parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlinear_analysis) != 0) ||
-        (parsetext(fp, "stiffness_calculation_method", 's', &stiffness_calculation_method) != 0) ||
-        (parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves) != 0) ||
-        (parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace) != 0))
+        (parsetext(fp, "cvmdb_input_file", 's', &Param.cvmdb_input_file) != 0))
     {
         fprintf(stderr, "Error parsing simulation parameters from %s\n",
                 numericalin);
@@ -1001,6 +996,13 @@ static int32_t parse_parameters(const char *numericalin)
     parsetext(fp, "include_topography", 's', &include_topography);
     parsetext(fp, "Istanbul_velocity_model", 's', &IstanbulModel);
     parsetext(fp, "basin_velocity_model", 's', &basinModel);
+    parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlinear_analysis);
+    parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves);
+    parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace);
+    /* These parameters have been initialized with different default values
+    and do not necessary to be set in the parameter input file. */
+    parsetext(fp, "use_progressive_meshing", 'i', &step_meshing);
+    parsetext(fp, "stiffness_calculation_method", 's', &stiffness_calculation_method);
 
     hu_config_get_int_opt(fp, "output_mesh", &Param.theMeshOutFlag);
     hu_config_get_int_opt(fp, "enable_timing_barriers", &Param.theTimingBarriersFlag);

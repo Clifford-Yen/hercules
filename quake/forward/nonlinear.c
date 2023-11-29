@@ -620,9 +620,12 @@ int32_t nonlinear_initparameters ( const char *parametersin,
     int      row;
     double   geostatic_loading_t, geostatic_cushion_t, errorTol, backbone_errorTol,
             *auxiliar, stff_dmp, stff_dmp_freq;
-    char     material_model[64], surf_groundwatertable[64],
+    char     material_model[64], 
              plasticity_type[64], approx_geostatic_state[64], tension_cutoff[64],
-             isDRMActive[64], DRMPart[64];
+             DRMPart[64];
+    /* Optional parameters */
+    char surf_groundwatertable[64] = "no", // TODO: It seems this parameter does not have any effect anywhere in Hercules.
+        isDRMActive[64] = "no";
 
     materialmodel_t      materialmodel;
     plasticitytype_t     plasticitytype;
@@ -644,38 +647,56 @@ int32_t nonlinear_initparameters ( const char *parametersin,
          (parsetext(fp, "backbone_errTol",              'd', &backbone_errorTol      ) != 0) ||
          (parsetext(fp, "material_model",               's', &material_model         ) != 0) ||
          (parsetext(fp, "approximate_geostatic_state",  's', &approx_geostatic_state ) != 0) ||
-         (parsetext(fp, "surface_groundwatertable",     's', &surf_groundwatertable  ) != 0) ||
          (parsetext(fp, "material_plasticity_type",     's', &plasticity_type        ) != 0) ||
          (parsetext(fp, "material_properties_count",    'i', &properties_count       ) != 0) ||
          (parsetext(fp, "no_substeps",                  'i', &no_substeps            ) != 0) ||
          (parsetext(fp, "stiff_damp",                   'd', &stff_dmp               ) != 0) ||
          (parsetext(fp, "freq_stiff_damp",              'd', &stff_dmp_freq          ) != 0) ||
-         (parsetext(fp, "tension_cutoff",               's', &tension_cutoff         ) != 0) ||
-         (parsetext(fp, "implement_drm",                's', &isDRMActive            ) != 0) ||
-         (parsetext(fp, "which_drm_part",               's', &DRMPart                ) != 0)  )
+         (parsetext(fp, "tension_cutoff",               's', &tension_cutoff         ) != 0)  )
     {
         fprintf(stderr, "Error parsing nonlinear parameters from %s\n", parametersin);
         return -1;
     }
+    /* Optional parameters */
+    parsetext(fp, "which_drm_part", 's', &DRMPart);
+    /* These parameters have been initialized as "no". If they are
+    not set in the input file, their values will just be "no". */
+    parsetext(fp, "surface_groundwatertable", 's', &surf_groundwatertable);
+    parsetext(fp, "implement_drm", 's', &isDRMActive);
 
     /* Performs sanity checks */
 
-    if ( strcasecmp(DRMPart, "part0") == 0) {
-        drmPart = PART0;
-    } else if (strcasecmp(DRMPart, "part1") == 0) {
-        drmPart = PART1;
-    } else if (strcasecmp(DRMPart, "part2") == 0) {
-        drmPart = PART2;
-    } else {
-        solver_abort( __FUNCTION_NAME, NULL,
-            "Unknown drm type: %s\n",
-                drmPart );
-    }
-
-    whichDrmPart  = drmPart;
-
     if ( strcasecmp(isDRMActive, "yes") == 0 ) {
         DRMActive = YES;
+
+        if ( strcasecmp(DRMPart, "part0") == 0) {
+            drmPart = PART0;
+        } else if (strcasecmp(DRMPart, "part1") == 0) {
+            drmPart = PART1;
+        } else if (strcasecmp(DRMPart, "part2") == 0) {
+            drmPart = PART2;
+        } else {
+            solver_abort( __FUNCTION_NAME, NULL,
+                "Unknown drm type: %s\n",
+                    drmPart );
+        }
+        whichDrmPart  = drmPart;
+
+        XMALLOC_VAR_N( auxiliar, double, 5 );
+        if ( parsedarray( fp, "drm_boundary", 5 , auxiliar ) != 0)
+        {
+            fprintf( stderr,
+                    "Error parsing drm_boundaries list from %s\n",
+                    parametersin );
+            return -1;
+        }
+        /* Init the static global variables */
+        DRMXMin  = auxiliar [ 0 ];
+        DRMYMin  = auxiliar [ 1 ];
+        DRMXMax  = auxiliar [ 2 ];
+        DRMYMax  = auxiliar [ 3 ];
+        DRMDepth = auxiliar [ 4 ];
+        free( auxiliar );
     } else if ( strcasecmp(isDRMActive, "no") == 0 ) {
         DRMActive = NO;
     } else {
@@ -685,26 +706,6 @@ int32_t nonlinear_initparameters ( const char *parametersin,
                 isDRMActive );
         return -1;
     }
-
-    XMALLOC_VAR_N( auxiliar, double, 5 );
-
-    if ( parsedarray( fp, "drm_boundary", 5 , auxiliar ) != 0)
-    {
-        fprintf( stderr,
-                "Error parsing drm_boundaries list from %s\n",
-                parametersin );
-        return -1;
-    }
-
-    /* Init the static global variables */
-
-    DRMXMin  = auxiliar [ 0 ];
-    DRMYMin  = auxiliar [ 1 ];
-    DRMXMax  = auxiliar [ 2 ];
-    DRMYMax  = auxiliar [ 3 ];
-    DRMDepth = auxiliar [ 4 ];
-
-    free( auxiliar );
 
 
     if ( (geostatic_loading_t < 0) || (geostatic_cushion_t < 0) ||
@@ -751,14 +752,14 @@ int32_t nonlinear_initparameters ( const char *parametersin,
         return -1;
     }
 
-    if ( strcasecmp(plasticity_type, "rate_dependant") == 0 ) {
-        plasticitytype = RATE_DEPENDANT;
-    } else if ( strcasecmp(plasticity_type, "rate_independant") == 0 ) {
-        plasticitytype = RATE_INDEPENDANT;
+    if ( strcasecmp(plasticity_type, "rate_dependent") == 0 ) {
+        plasticitytype = RATE_DEPENDENT;
+    } else if ( strcasecmp(plasticity_type, "rate_independent") == 0 ) {
+        plasticitytype = RATE_INDEPENDENT;
     } else {
         fprintf(stderr,
                 "Illegal material plasticity type for nonlinear "
-                "analysis (rate_dependant, rate_independant): %s\n",
+                "analysis (rate_dependent, rate_independent): %s\n",
                 plasticity_type);
         return -1;
     }
@@ -4250,9 +4251,9 @@ void material_update ( nlconstants_t constants, tensor_t e_n, tensor_t e_n1, ten
 
 
 
-    //  if ( thePlasticityModel == RATE_DEPENDANT ) { /*TODO: Add implementation for rate dependant material model  */
+    //  if ( thePlasticityModel == RATE_DEPENDENT ) { /*TODO: Add implementation for rate dependent material model  */
     //
-    //      /* Rate dependant material is considered as a Drucker-Prager material   */
+    //      /* Rate dependent material is considered as a Drucker-Prager material   */
     //
     //      double factor      = fs / constants.k;
     //      double strainRate  = constants.strainrate;
@@ -4307,7 +4308,7 @@ tensor_t compute_dfds (tensor_t dev, double J2, double beta) {
     if ( dLambda == 0 )
         return pstrain1;
 
-    if ( thePlasticityModel == RATE_DEPENDANT ) {
+    if ( thePlasticityModel == RATE_DEPENDENT ) {
         pstrain2.xx = pstrain1.xx + dt * dLambda * dfds.xx;
         pstrain2.yy = pstrain1.yy + dt * dLambda * dfds.yy;
         pstrain2.zz = pstrain1.zz + dt * dLambda * dfds.zz;
