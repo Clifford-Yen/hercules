@@ -287,6 +287,7 @@ static struct Param_t
     noyesflag_t includeHomogeneousHalfSpace;
     noyesflag_t IstanbulVelocityModel;
     noyesflag_t basinVelocityModel;
+    noyesflag_t threeDVelocityModel;
 
     int theTimingBarriersFlag;
     stiffness_type_t theStiffness;
@@ -336,6 +337,8 @@ static struct Param_t
     int basinXCount, basinYCount, basinZCount;
     double basinIncrement;
     double **basinData;
+    double the3DVelocityModelLong;
+    double the3DVelocityModelLat;
 
 } Param = {
     .FourDOutFp = NULL,
@@ -445,8 +448,8 @@ monitor_print(const char *format, ...)
 static void read_parameters(int argc, char **argv)
 {
 
-#define LOCAL_INIT_DOUBLE_MESSAGE_LENGTH 24 /* Must adjust this if adding double params */
-#define LOCAL_INIT_INT_MESSAGE_LENGTH 30    /* Must adjust this if adding int params */
+#define LOCAL_INIT_DOUBLE_MESSAGE_LENGTH 26 /* Must adjust this if adding double params */
+#define LOCAL_INIT_INT_MESSAGE_LENGTH 31    /* Must adjust this if adding int params */
 
     double double_message[LOCAL_INIT_DOUBLE_MESSAGE_LENGTH];
     int int_message[LOCAL_INIT_INT_MESSAGE_LENGTH];
@@ -489,6 +492,8 @@ static void read_parameters(int argc, char **argv)
     double_message[21] = Param.theBasinLong;
     double_message[22] = Param.theBasinLat;
     double_message[23] = Param.basinIncrement;
+    double_message[24] = Param.the3DVelocityModelLong;
+    double_message[25] = Param.the3DVelocityModelLat;
 
     MPI_Bcast(double_message, LOCAL_INIT_DOUBLE_MESSAGE_LENGTH, MPI_DOUBLE, 0, comm_solver);
 
@@ -516,6 +521,8 @@ static void read_parameters(int argc, char **argv)
     Param.theBasinLong = double_message[21];
     Param.theBasinLat = double_message[22];
     Param.basinIncrement = double_message[23];
+    Param.the3DVelocityModelLong = double_message[24];
+    Param.the3DVelocityModelLat = double_message[25];
 
     /*Broadcast all integer params*/
     int_message[0] = Param.theTotalSteps;
@@ -548,6 +555,7 @@ static void read_parameters(int argc, char **argv)
     int_message[27] = (int)Param.basinXCount;
     int_message[28] = (int)Param.basinYCount;
     int_message[29] = (int)Param.basinZCount;
+    int_message[30] = (int)Param.threeDVelocityModel;
 
     MPI_Bcast(int_message, LOCAL_INIT_INT_MESSAGE_LENGTH, MPI_INT, 0, comm_solver);
 
@@ -581,6 +589,7 @@ static void read_parameters(int argc, char **argv)
     Param.basinXCount = int_message[27];
     Param.basinYCount = int_message[28];
     Param.basinZCount = int_message[29];
+    Param.threeDVelocityModel = int_message[30];
 
     /*Broadcast all string params*/
     MPI_Bcast(Param.parameters_input_file, 256, MPI_CHAR, 0, comm_solver);
@@ -806,6 +815,7 @@ static int32_t parse_parameters(const char *numericalin)
         include_topography[64] = "no",
         IstanbulModel[64] = "no",
         basinModel[64] = "no",
+        threeDModel[64] = "no",
         include_nonlinear_analysis[64] = "no",
         include_incident_planewaves[64] = "no",
         include_hmgHalfSpace[64] = "no",
@@ -828,6 +838,7 @@ static int32_t parse_parameters(const char *numericalin)
     noyesflag_t includeHmgHalfSpace = -1;
     noyesflag_t includeIstanbulVelModel = -1;
     noyesflag_t includeBasinVelModel = -1;
+    noyesflag_t include3DVelModel = -1;
 
     /* Obtain the specification of the simulation */
     if ((fp = fopen(physicsin, "r")) == NULL)
@@ -996,6 +1007,7 @@ static int32_t parse_parameters(const char *numericalin)
     parsetext(fp, "include_topography", 's', &include_topography);
     parsetext(fp, "Istanbul_velocity_model", 's', &IstanbulModel);
     parsetext(fp, "basin_velocity_model", 's', &basinModel);
+    parsetext(fp, "3D_velocity_model", 's', &threeDModel);
     parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlinear_analysis);
     parsetext(fp, "include_incident_planewaves", 's', &include_incident_planewaves);
     parsetext(fp, "include_hmg_halfspace", 's', &include_hmgHalfSpace);
@@ -1331,6 +1343,24 @@ static int32_t parse_parameters(const char *numericalin)
                      includeBasinVelModel);
     }
 
+    if (strcasecmp(threeDModel, "yes") == 0) {
+        include3DVelModel = YES;
+        if ((parsetext(fp, "3D_velocity_model_origin_latitude_deg", 'd', &Param.the3DVelocityModelLat) != 0) ||
+        (parsetext(fp, "3D_velocity_model_origin_longitude_deg", 'd', &Param.the3DVelocityModelLong) != 0))
+        {
+            fprintf(stderr, "Error reading basin origin from %s\n", numericalin);
+            return -1;
+        }
+    }
+    else if (strcasecmp(threeDModel, "no") == 0) {
+        include3DVelModel = NO;
+    }
+    else {
+        solver_abort(__FUNCTION_NAME, NULL,
+                     "Unknown response for 3D_velocity_model (yes or no): %s\n",
+                     include3DVelModel);
+    }
+
     /* read domain corners */
     int iCorner;
     double *auxiliar;
@@ -1420,6 +1450,7 @@ static int32_t parse_parameters(const char *numericalin)
 
     Param.IstanbulVelocityModel = includeIstanbulVelModel;
     Param.basinVelocityModel = includeBasinVelModel;
+    Param.threeDVelocityModel = include3DVelModel;
 
     strcpy(Param.theCheckPointingDirOut, checkpoint_path);
 
@@ -1441,6 +1472,7 @@ static int32_t parse_parameters(const char *numericalin)
     monitor_print("Include Homogeneous Halfspace:      %s\n", include_hmgHalfSpace);
     monitor_print("Include Istanbul Velocity model:    %s\n", IstanbulModel);
     monitor_print("Include Basin Velocity model:       %s\n", basinModel);
+    monitor_print("Include 3D Velocity model:          %s\n", threeDModel);
     if (typeOfDamping >= BKT) {
         monitor_print("Use Parametric Q factor:            %s\n", use_parametricq);
         if (have_parametricq == YES) {
@@ -1900,6 +1932,32 @@ int getBasinMaterial(cvmpayload_t *g_props, vector3D_t basinVelModel_origin, dou
     return res;
 }
 
+/*
+ * Implemented by Clifford
+*/
+int get3DMaterial(cvmpayload_t *g_props, vector3D_t threeDVelModel_origin, double x_m, double y_m, double z_m) {
+    double output[3] = {0.0};
+    double x_rel = x_m - threeDVelModel_origin.x[0];
+    double y_rel = y_m - threeDVelModel_origin.x[1];
+    int res = getMaterialFrom3DVelocityModel(x_rel, y_rel, z_m, output, threeDVelModel_origin.x[0], threeDVelModel_origin.x[1]);
+    g_props->Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
+    g_props->Qp = 2.0 * g_props->Qs;
+    if (res != 0) {
+        if (Param.useProfile == NO) {
+            res = cvm_query(Global.theCVMEp, y_m, x_m, z_m, g_props);
+        }
+        else {
+            res = profile_query(z_m, g_props);
+        }
+    }
+    else {
+        g_props->Vs = output[0];
+        g_props->Vp = output[1];
+        g_props->rho = output[2];
+    }
+    return res;
+}
+
 /**
  * Assign values (material properties) to a leaf octant specified by
  * octleaf.  In order to refine the mesh, select the minimum Vs of 27
@@ -1914,6 +1972,7 @@ setrec(octant_t *leaf, double ticksize, void *data)
     cvmpayload_t g_props_min; /* cvm record with the min Vs found */
     vector3D_t IstVelModel_origin;
     vector3D_t basinVelModel_origin;
+    vector3D_t threeDVelModel_origin;
 
     int i_x, i_y, i_z, n_points = 3;
     double points[3];
@@ -1935,9 +1994,14 @@ setrec(octant_t *leaf, double ticksize, void *data)
                                                                 Param.theSurfaceCornersLat,
                                                                 Param.theDomainY, Param.theDomainX);
     }
-
     if (Param.basinVelocityModel == YES) {
         basinVelModel_origin = compute_domain_coords_linearinterp(Param.theBasinLong, Param.theBasinLat,
+                                                                Param.theSurfaceCornersLong,
+                                                                Param.theSurfaceCornersLat,
+                                                                Param.theDomainY, Param.theDomainX);
+    }
+    if (Param.threeDVelocityModel == YES) {
+        threeDVelModel_origin = compute_domain_coords_linearinterp(Param.the3DVelocityModelLong, Param.the3DVelocityModelLat,
                                                                 Param.theSurfaceCornersLong,
                                                                 Param.theSurfaceCornersLat,
                                                                 Param.theDomainY, Param.theDomainX);
@@ -2015,6 +2079,9 @@ setrec(octant_t *leaf, double ticksize, void *data)
                 }
                 else if (Param.basinVelocityModel == YES) {
                     res = getBasinMaterial(&g_props, basinVelModel_origin, x_m, y_m, z_m);
+                }
+                else if (Param.threeDVelocityModel == YES) {
+                    res = get3DMaterial(&g_props, threeDVelModel_origin, x_m, y_m, z_m);
                 }
                 else if (Param.useProfile == NO)
                 {
@@ -8302,6 +8369,7 @@ mesh_correct_properties(etree_t *cvm)
     int32_t lnid0;
     vector3D_t IstVelModel_origin;
     vector3D_t basinVelModel_origin;
+    vector3D_t threeDVelModel_origin;
 
     double Qs, Qp, Qk, L;
 
@@ -8316,9 +8384,14 @@ mesh_correct_properties(etree_t *cvm)
                                                                 Param.theSurfaceCornersLat,
                                                                 Param.theDomainY, Param.theDomainX);
     }
-
     if (Param.basinVelocityModel == YES) {
         basinVelModel_origin = compute_domain_coords_linearinterp(Param.theBasinLong, Param.theBasinLat,
+                                                                Param.theSurfaceCornersLong,
+                                                                Param.theSurfaceCornersLat,
+                                                                Param.theDomainY, Param.theDomainX);
+    }
+    if (Param.threeDVelocityModel == YES) {
+        threeDVelModel_origin = compute_domain_coords_linearinterp(Param.the3DVelocityModelLong, Param.the3DVelocityModelLat,
                                                                 Param.theSurfaceCornersLong,
                                                                 Param.theSurfaceCornersLat,
                                                                 Param.theDomainY, Param.theDomainX);
@@ -8403,6 +8476,9 @@ mesh_correct_properties(etree_t *cvm)
                     else if (Param.basinVelocityModel == YES) {
                         res = getBasinMaterial(&g_props, basinVelModel_origin, north_m, east_m, depth_m);
                     }
+                    else if (Param.threeDVelocityModel == YES) {
+                        res = get3DMaterial(&g_props, threeDVelModel_origin, north_m, east_m, depth_m);
+                    }
                     else if (Param.useProfile == NO)
                     {
                         res = cvm_query(Global.theCVMEp, east_m, north_m, depth_m, &g_props);
@@ -8458,6 +8534,9 @@ mesh_correct_properties(etree_t *cvm)
                             }
                             else if (Param.basinVelocityModel == YES) {
                                 res = getBasinMaterial(&g_props, basinVelModel_origin, north_m, east_m, depth_k);
+                            }
+                            else if (Param.threeDVelocityModel == YES) {
+                                res = get3DMaterial(&g_props, threeDVelModel_origin, north_m, east_m, depth_k);
                             }
                             else if (Param.useProfile == NO)
                             {
@@ -8980,6 +9059,9 @@ int main(int argc, char **argv)
     if (Param.IstanbulVelocityModel == YES)
     {
         Istanbul_init(Global.myID);
+    } else if (Param.threeDVelocityModel == YES) {
+        /* Initialize 3D velocity model */
+        general3DVelocityModel_init(Global.myID);
     }
 
     /* Initialize nonlinear parameters */

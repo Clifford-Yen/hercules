@@ -48,5 +48,7 @@ int material_property_relative_V10_local(double x_input, double y_input, double 
 int32_t Istanbul_initparameters ( );
 void Istanbul_init ( int32_t myID );
 
+int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_input, double output[3], double DRM_southwest_x, double DRM_southwest_y);
+void general3DVelocityModel_init( int32_t myID );
 
 #endif /* DRM_PLANEWAVES_H_ */
