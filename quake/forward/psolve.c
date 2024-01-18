@@ -2387,7 +2387,7 @@ static cvmrecord_t *sliceCVM(const char *cvm_flatfile)
                 iotime / 1000,
                 (float)statbuf.st_size / (1 << 20) / (iotime / 1000));
 
-        fprintf(stdout, "Memmove takes %.2f seconds\n",
+        monitor_print("Memmove takes %.2f seconds\n",
                 (float)memmovetime / 1000);
     }
     else
@@ -2503,23 +2503,23 @@ mesh_generate()
 
     if (Global.myID == 0)
     {
-        fprintf(stdout, "Meshing: ");
+        monitor_print("Meshing: ");
         if (Param.theStepMeshingFactor == 0)
         {
-            fprintf(stdout, "Conventional\n\n");
+            monitor_print("Conventional\n\n");
         }
         else
         {
-            fprintf(stdout, "Progressive\n\n");
+            monitor_print("Progressive\n\n");
         }
-        fprintf(stdout, "Stage %14s Min %7s Max %5s Total    Time(s)", "", "", "");
+        monitor_print("Stage %14s Min %7s Max %5s Total    Time(s)", "", "", "");
         if (Param.theStepMeshingFactor == 0)
         {
-            fprintf(stdout, "\n\n");
+            monitor_print("\n\n");
         }
         else
         {
-            fprintf(stdout, "   Step  f(Hz)\n\n");
+            monitor_print("   Step  f(Hz)\n\n");
         }
     }
 
@@ -2528,7 +2528,7 @@ mesh_generate()
     Timer_Start("Octor Newtree");
     if (Global.myID == 0)
     {
-        fprintf(stdout, "New tree %41s", "");
+        monitor_print("New tree %41s", "");
     }
     Global.myOctree = octor_newtree(Param.theDomainX, Param.theDomainY, Param.theDomainZ,
                                     sizeof(edata_t), Global.myID, Global.theGroupSize,
@@ -2544,7 +2544,7 @@ mesh_generate()
 
     if (Global.myOctree == NULL)
     {
-        fprintf(stderr, "Thread %d: mesh_generate: fail to create octree\n",
+        monitor_print("Thread %d: mesh_generate: fail to create octree\n",
                 Global.myID);
         MPI_Abort(MPI_COMM_WORLD, ERROR);
         exit(1);
@@ -2553,7 +2553,7 @@ mesh_generate()
     Timer_Stop("Octor Newtree");
     if (Global.myID == 0)
     {
-        fprintf(stdout, "%9.2f\n\n", Timer_Value("Octor Newtree", 0));
+        monitor_print("%9.2f\n\n", Timer_Value("Octor Newtree", 0));
     }
 
     /* Essential for DRM implementation */
@@ -2568,7 +2568,7 @@ mesh_generate()
     /* Use flat data record file and distibute the data in memories */
     if (Global.myID == 0)
     {
-        fprintf(stdout, "slicing CVMDB ...");
+        monitor_print("slicing CVMDB ...");
     }
     Timer_Start("Slice CVM");
     Global.theCVMRecord = sliceCVM(Param.theCVMFlatFile);
@@ -2583,7 +2583,7 @@ mesh_generate()
     };
     if (Global.myID == 0)
     {
-        fprintf(stdout, "done : %9.2f seconds\n", Timer_Value("Slice CVM", 0));
+        monitor_print("done : %9.2f seconds\n", Timer_Value("Slice CVM", 0));
     }
 #endif
 
@@ -2597,7 +2597,7 @@ mesh_generate()
         Timer_Start("Octor Refinetree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "Refining     ");
+            monitor_print("Refining     ");
             fflush(stdout);
         }
         if (octor_refinetree(Global.myOctree, toexpand, setrec) != 0)
@@ -2612,20 +2612,20 @@ mesh_generate()
         maxe = octor_getmaxleavescount(Global.myOctree, GLOBAL);
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%11" INT64_FMT " %11" INT64_FMT " %11" INT64_FMT, mine, maxe, tote);
+            monitor_print("%11" INT64_FMT " %11" INT64_FMT " %11" INT64_FMT, mine, maxe, tote);
             fflush(stdout);
         }
         Timer_Stop("Octor Refinetree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%11.2f", Timer_Value("Octor Refinetree", 0) - prevtref);
+            monitor_print("%11.2f", Timer_Value("Octor Refinetree", 0) - prevtref);
             if (Param.theStepMeshingFactor == 0)
             {
-                fprintf(stdout, "\n");
+                monitor_print("\n");
             }
             else
             {
-                fprintf(stdout, "   %4d %6.2f\n", step, Param.theFactor / ppwl);
+                monitor_print("   %4d %6.2f\n", step, Param.theFactor / ppwl);
             }
             prevtref = Timer_Value("Octor Refinetree", 0);
             fflush(stdout);
@@ -2635,7 +2635,7 @@ mesh_generate()
         Timer_Start("Octor Balancetree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "Balancing    ");
+            monitor_print("Balancing    ");
             fflush(stdout);
         }
         if (octor_balancetree(Global.myOctree, setrec, Param.theStepMeshingFactor) != 0)
@@ -2650,13 +2650,13 @@ mesh_generate()
         maxe = octor_getmaxleavescount(Global.myOctree, GLOBAL);
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%11" INT64_FMT " %11" INT64_FMT " %11" INT64_FMT, mine, maxe, tote);
+            monitor_print("%11" INT64_FMT " %11" INT64_FMT " %11" INT64_FMT, mine, maxe, tote);
             fflush(stdout);
         }
         Timer_Stop("Octor Balancetree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%11.2f\n", Timer_Value("Octor Balancetree", 0) - prevtbal);
+            monitor_print("%11.2f\n", Timer_Value("Octor Balancetree", 0) - prevtbal);
             prevtbal = Timer_Value("Octor Balancetree", 0);
             fflush(stdout);
         }
@@ -2665,7 +2665,7 @@ mesh_generate()
         Timer_Start("Octor Partitiontree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "Partitioning ");
+            monitor_print("Partitioning ");
             fflush(stdout);
         }
         if (octor_partitiontree(Global.myOctree, bldgs_nodesearch_com, pushdowns_nodesearch) != 0)
@@ -2680,13 +2680,13 @@ mesh_generate()
         maxe = octor_getmaxleavescount(Global.myOctree, GLOBAL);
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%11" INT64_FMT " %11" INT64_FMT " %11" INT64_FMT, mine, maxe, tote);
+            monitor_print("%11" INT64_FMT " %11" INT64_FMT " %11" INT64_FMT, mine, maxe, tote);
             fflush(stdout);
         }
         Timer_Stop("Octor Partitiontree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%11.2f\n\n", Timer_Value("Octor Partitiontree", 0) - prevtpar);
+            monitor_print("%11.2f\n\n", Timer_Value("Octor Partitiontree", 0) - prevtpar);
             prevtpar = Timer_Value("Octor Partitiontree", 0);
             fflush(stdout);
         }
@@ -2706,7 +2706,7 @@ mesh_generate()
         Timer_Start("Carve Buildings");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "Carving Buildings/Topography");
+            monitor_print("Carving Buildings/Topography");
             fflush(stdout);
         }
 
@@ -2720,14 +2720,14 @@ mesh_generate()
         Timer_Stop("Carve Buildings");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%9.2f\n", Timer_Value("Carve Buildings", 0));
+            monitor_print("%9.2f\n", Timer_Value("Carve Buildings", 0));
             fflush(stdout);
         }
 
         Timer_Start("Octor Partitiontree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "Repartitioning");
+            monitor_print("Repartitioning");
             fflush(stdout);
         }
         if (octor_partitiontree(Global.myOctree, bldgs_nodesearch_com, pushdowns_nodesearch) != 0)
@@ -2741,23 +2741,23 @@ mesh_generate()
         Timer_Stop("Octor Partitiontree");
         if (Global.myID == 0)
         {
-            fprintf(stdout, "%9.2f\n", Timer_Value("Octor Partitiontree", 0));
+            monitor_print("%9.2f\n", Timer_Value("Octor Partitiontree", 0));
             fflush(stdout);
         }
     }
 
     if (Global.myID == 0 && Param.theStepMeshingFactor != 0)
     {
-        fprintf(stdout, "Total refine    %33s %9.2f\n", "", Timer_Value("Octor Refinetree", 0));
-        fprintf(stdout, "Total balance   %33s %9.2f\n", "", Timer_Value("Octor Balancetree", 0));
-        fprintf(stdout, "Total partition %33s %9.2f\n\n", "", Timer_Value("Octor Partitiontree", 0));
+        monitor_print("Total refine    %33s %9.2f\n", "", Timer_Value("Octor Refinetree", 0));
+        monitor_print("Total balance   %33s %9.2f\n", "", Timer_Value("Octor Balancetree", 0));
+        monitor_print("Total partition %33s %9.2f\n\n", "", Timer_Value("Octor Partitiontree", 0));
         fflush(stdout);
     }
 
     Timer_Start("Octor Extractmesh");
     if (Global.myID == 0)
     {
-        fprintf(stdout, "Extracting the mesh %30s", "");
+        monitor_print("Extracting the mesh %30s", "");
         fflush(stdout);
     }
     Global.myMesh = octor_extractmesh(Global.myOctree, bldgs_nodesearch, pushdowns_nodesearch, bldgs_nodesearch_com,
@@ -2774,14 +2774,14 @@ mesh_generate()
     Timer_Stop("Octor Extractmesh");
     if (Global.myID == 0)
     {
-        fprintf(stdout, "%9.2f\n", Timer_Value("Octor Partitiontree", 0));
+        monitor_print("%9.2f\n", Timer_Value("Octor Partitiontree", 0));
     }
 
     Timer_Start("Mesh correct properties");
     /* Re-populates the mesh with actual values from the CVM-etree */
     if (Global.myID == 0)
     {
-        fprintf(stdout, "Correcting mesh properties %23s", "");
+        monitor_print("Correcting mesh properties %23s", "");
         fflush(stdout);
     }
 
@@ -2791,7 +2791,7 @@ mesh_generate()
     Timer_Stop("Mesh correct properties");
     if (Global.myID == 0)
     {
-        fprintf(stdout, "%9.2f\n\n", Timer_Value("Mesh correct properties", 0));
+        monitor_print("%9.2f\n\n", Timer_Value("Mesh correct properties", 0));
         fflush(stdout);
     }
 
@@ -3690,25 +3690,25 @@ static void solver_set_critical_T()
     {
         if (Param.theDampingStatisticsFlag == 1)
         {
-            printf("\n\n Critical delta t related information: \n\n");
-            printf("\t 1. The minimum h/Vp     = %.6f \n", min_h_over_Vp_global);
-            printf("\t 2. The minimum dt X     = %.6f \n", min_dt_factor_X_global);
-            printf("\t 3. The minimum dt Z     = %.6f \n", min_dt_factor_Z_global);
-            printf("\t 4. The minimum zeta     = %.6f \n", min_zeta_global);
-            printf("\t 5. The maximum zeta     = %.6f \n", max_zeta_global);
-            printf("\t 6. The minimum xi       = %.6f \n", min_xi_global);
-            printf("\t 7. The maximum xi       = %.6f \n", max_xi_global);
-            printf("\t 8. The minimum Vs/Vp    = %.6f \n", min_VsVp_global);
-            printf("\t 9. The maximum Vs/Vp    = %.6f \n", max_VsVp_global);
-            printf("\t10. The minimum (Vp/Vs)*zeta = %.6f \n", min_VpVsZ_global);
-            printf("\t11. The maximum (Vp/Vs)*zeta = %.6f \n", max_VpVsZ_global);
-            printf("\t12. The minimum Vs       = %.6f \n", min_Vs_global);
-            printf("\t13. The maximum Vs       = %.6f \n", max_Vs_global);
+            monitor_print("\n\n Critical delta t related information: \n\n");
+            monitor_print("\t 1. The minimum h/Vp     = %.6f \n", min_h_over_Vp_global);
+            monitor_print("\t 2. The minimum dt X     = %.6f \n", min_dt_factor_X_global);
+            monitor_print("\t 3. The minimum dt Z     = %.6f \n", min_dt_factor_Z_global);
+            monitor_print("\t 4. The minimum zeta     = %.6f \n", min_zeta_global);
+            monitor_print("\t 5. The maximum zeta     = %.6f \n", max_zeta_global);
+            monitor_print("\t 6. The minimum xi       = %.6f \n", min_xi_global);
+            monitor_print("\t 7. The maximum xi       = %.6f \n", max_xi_global);
+            monitor_print("\t 8. The minimum Vs/Vp    = %.6f \n", min_VsVp_global);
+            monitor_print("\t 9. The maximum Vs/Vp    = %.6f \n", max_VsVp_global);
+            monitor_print("\t10. The minimum (Vp/Vs)*zeta = %.6f \n", min_VpVsZ_global);
+            monitor_print("\t11. The maximum (Vp/Vs)*zeta = %.6f \n", max_VpVsZ_global);
+            monitor_print("\t12. The minimum Vs       = %.6f \n", min_Vs_global);
+            monitor_print("\t13. The maximum Vs       = %.6f \n", max_Vs_global);
         }
         else
         {
-            printf("\n\n Critical delta t related information: \n\n");
-            printf("\t The minimum h/Vp = %.6f \n\n", min_h_over_Vp_global);
+            monitor_print("\n\n Critical delta t related information: \n\n");
+            monitor_print("\t The minimum h/Vp = %.6f \n\n", min_h_over_Vp_global);
         }
     }
 
@@ -3854,7 +3854,7 @@ static void get_minimum_edge()
 
     if (Global.myID == 0)
     {
-        printf("\nThe minimal h  = %.6f\n\n\n", min_h_global);
+        monitor_print("\nThe minimal h  = %.6f\n\n\n", min_h_global);
     }
 
     Global.theNumericsInformation.minimumh = min_h_global;
@@ -3870,7 +3870,7 @@ print_K_stdoutput()
 {
     int i, j, iloc, jloc;
 
-    fprintf(stdout, "\n\nStiffness Matrix K1 \n\n");
+    monitor_print("\n\nStiffness Matrix K1 \n\n");
     for (i = 0; i < 8; i++)
     {
         for (iloc = 0; iloc < 3; iloc++)
@@ -3879,14 +3879,14 @@ print_K_stdoutput()
             {
                 for (jloc = 0; jloc < 3; jloc++)
                 {
-                    fprintf(stdout, "%10.2e", Global.theK1[i][j].f[iloc][jloc]);
+                    monitor_print("%10.2e", Global.theK1[i][j].f[iloc][jloc]);
                 }
             }
-            fprintf(stdout, "\n");
+            monitor_print("\n");
         }
     }
 
-    fprintf(stdout, "\n\nStiffness Matrix K2 \n\n");
+    monitor_print("\n\nStiffness Matrix K2 \n\n");
     for (i = 0; i < 8; i++)
     {
         for (iloc = 0; iloc < 3; iloc++)
@@ -3895,14 +3895,14 @@ print_K_stdoutput()
             {
                 for (jloc = 0; jloc < 3; jloc++)
                 {
-                    fprintf(stdout, "%10.2e", Global.theK2[i][j].f[iloc][jloc]);
+                    monitor_print("%10.2e", Global.theK2[i][j].f[iloc][jloc]);
                 }
             }
-            fprintf(stdout, "\n");
+            monitor_print("\n");
         }
     }
 
-    fprintf(stdout, "\n\nStiffness Matrix K3 \n\n");
+    monitor_print("\n\nStiffness Matrix K3 \n\n");
     for (i = 0; i < 8; i++)
     {
         for (iloc = 0; iloc < 3; iloc++)
@@ -3911,14 +3911,14 @@ print_K_stdoutput()
             {
                 for (jloc = 0; jloc < 3; jloc++)
                 {
-                    fprintf(stdout, "%10.2e", Global.theK3[i][j].f[iloc][jloc]);
+                    monitor_print("%10.2e", Global.theK3[i][j].f[iloc][jloc]);
                 }
             }
-            fprintf(stdout, "\n");
+            monitor_print("\n");
         }
     }
 
-    fprintf(stdout, "\n\n");
+    monitor_print("\n\n");
 }
 
 /**
@@ -7335,7 +7335,7 @@ source_init(const char *physicsin)
                                  Global.theNumericsInformation, Global.theMPIInformation,
                                  globalDelayT, surfaceShift))
         {
-            fprintf(stdout, "Err:cannot create source forces");
+            monitor_print("Err:cannot create source forces");
             MPI_Abort(MPI_COMM_WORLD, ERROR);
             exit(1);
         }
@@ -8399,7 +8399,7 @@ mesh_correct_properties(etree_t *cvm)
 
     if (Global.myID == 0)
     {
-        fprintf(stdout, "mesh_correct_properties  ... ");
+        monitor_print("mesh_correct_properties  ... ");
         fflush(stdout);
     }
 

@@ -345,7 +345,7 @@ struct station_t {
     double*    displacementsX;
     double*    displacementsY;
     double*    displacementsZ;
-    double     h; /* dorian: added size edge to compute station«s strains */
+    double     h; /* dorian: added size edge to compute station's strains */
     double     mu;
     double     lambda;
 

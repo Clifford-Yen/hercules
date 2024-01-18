@@ -3251,7 +3251,7 @@ compute_myForces_point( const char* physicsin )
     pntSrc.dt		      = theDeltaT;
     pntSrc.numberOfTimeSteps  = theNumberOfTimeSteps;
 
-    /* dorian. added Ricker«s pulse parameters */
+    /* dorian. added Ricker's pulse parameters */
     pntSrc.Tp  = theRickerTp;
     pntSrc.Ts  = theRickerTs;
 

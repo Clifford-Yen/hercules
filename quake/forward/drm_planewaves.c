@@ -1624,10 +1624,10 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     double zi_elevation, zi_vs, zi_vp, zi_rho;
 
     double xmin = Soil_point_x[0];
-    // double xmax = Soil_point_x[Params_soil.numPointX - 1];
+    double xmax = Soil_point_x[Params_soil.numPointX - 1];
     double x_spacing = Soil_point_x[1] - Soil_point_x[0]; // Assuming uniform spacing
     double ymin = Soil_point_y[0];
-    // double ymax = Soil_point_y[Params_soil.numPointY - 1];
+    double ymax = Soil_point_y[Params_soil.numPointY - 1];
     double y_spacing = Soil_point_y[1] - Soil_point_y[0]; // Assuming uniform spacing
     // printf("x_input: %f, y_input: %f, z_input: %f\n", x_input, y_input, z_input);
 
@@ -1639,8 +1639,29 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
         return -1;
     }
 
-    x_grid_ID = floor((x_input - xmin) / x_spacing);
-    y_grid_ID = floor((y_input - ymin) / y_spacing);
+    // NOTE: Due to some inevitable errors during the calculation of distance and 
+    // conversion between UTM and lat/lon, sometimes the x_input and y_input are 
+    // slightly outside the range of the velocity model. This is a temporary fix 
+    // to avoid the program from crashing. 
+    if (x_input >= xmax) {
+        x_grid_ID = Params_soil.numPointX - 1;
+    } else if (x_input <= xmin) {
+        x_grid_ID = 0;
+    } else {
+        x_grid_ID = floor((x_input - xmin) / x_spacing);
+    }
+    if (y_input >= ymax) {
+        y_grid_ID = Params_soil.numPointY - 1;
+    } else if (y_input <= ymin) {
+        y_grid_ID = 0;
+    } else {
+        y_grid_ID = floor((y_input - ymin) / y_spacing);
+    }
+    // TODO: For some reason, y_input sometimes is outside of the range that is 
+    // defined in the parameter input file. This might need to be checked later.
+    // if (y_grid_ID > 124) {
+    //     printf("x_input: %f, y_input: %f, z_input: %f\n", x_input, y_input, z_input);
+    // }
 
     Rec_node_ID[0] = Params_soil.numPointX * y_grid_ID + x_grid_ID;
     Rec_node_ID[1] = Params_soil.numPointX * y_grid_ID + (x_grid_ID + 1);
@@ -1658,6 +1679,7 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     y_coord[3] = y_coord[2];
 
     // TODO: The elevation sign (+/-) has to be examined carefully
+    // TODO: Give users an option to choose between whether the topography is embedded in the velocity model or not
     z_elevation[0] = thebase_zcoord + point_elevation(x_coord[0] + DRM_southwest_x, y_coord[0] + DRM_southwest_y);
     z_elevation[1] = thebase_zcoord + point_elevation(x_coord[1] + DRM_southwest_x, y_coord[1] + DRM_southwest_y);
     z_elevation[2] = thebase_zcoord + point_elevation(x_coord[2] + DRM_southwest_x, y_coord[2] + DRM_southwest_y);
