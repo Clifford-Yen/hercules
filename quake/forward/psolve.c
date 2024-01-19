@@ -1348,7 +1348,7 @@ static int32_t parse_parameters(const char *numericalin)
         if ((parsetext(fp, "3D_velocity_model_origin_latitude_deg", 'd', &Param.the3DVelocityModelLat) != 0) ||
         (parsetext(fp, "3D_velocity_model_origin_longitude_deg", 'd', &Param.the3DVelocityModelLong) != 0))
         {
-            fprintf(stderr, "Error reading basin origin from %s\n", numericalin);
+            fprintf(stderr, "Error reading 3D velocity model origin from %s\n", numericalin);
             return -1;
         }
     }

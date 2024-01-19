@@ -1614,7 +1614,28 @@ static struct Params_soil_t {
     int numPointX;
     int numPointY;
     int numData;
+    int minPointZ;
 } Params_soil;
+
+double max(double arr[], int size) {
+    double max = arr[0];
+    for (int i = 1; i < size; i++) {
+        if (arr[i] > max) {
+            max = arr[i];
+        }
+    }
+    return max;
+}
+
+double min(double arr[], int size) {
+    double min = arr[0];
+    for (int i = 1; i < size; i++) {
+        if (arr[i] < min) {
+            min = arr[i];
+        }
+    }
+    return min;
+}
 
 int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_input, double output[3], double DRM_southwest_x, double DRM_southwest_y) {
     int i, k;
@@ -1629,39 +1650,20 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     double ymin = Soil_point_y[0];
     double ymax = Soil_point_y[Params_soil.numPointY - 1];
     double y_spacing = Soil_point_y[1] - Soil_point_y[0]; // Assuming uniform spacing
-    // printf("x_input: %f, y_input: %f, z_input: %f\n", x_input, y_input, z_input);
 
     int x_grid_ID, y_grid_ID, Rec_node_ID[4];
     double x_coord[4], y_coord[4], z_elevation[4], xi, eta, N1, N2, N3, N4;
     double thebase_zcoord = get_thebase_topo();
 
-    if (z_input < 0.0) {
+    if (z_input < Params_soil.minPointZ) {
+        return -1;
+    }
+    if (!(x_input > xmin && x_input < xmax && y_input > ymin && y_input < ymax)) {
         return -1;
     }
 
-    // NOTE: Due to some inevitable errors during the calculation of distance and 
-    // conversion between UTM and lat/lon, sometimes the x_input and y_input are 
-    // slightly outside the range of the velocity model. This is a temporary fix 
-    // to avoid the program from crashing. 
-    if (x_input >= xmax) {
-        x_grid_ID = Params_soil.numPointX - 1;
-    } else if (x_input <= xmin) {
-        x_grid_ID = 0;
-    } else {
-        x_grid_ID = floor((x_input - xmin) / x_spacing);
-    }
-    if (y_input >= ymax) {
-        y_grid_ID = Params_soil.numPointY - 1;
-    } else if (y_input <= ymin) {
-        y_grid_ID = 0;
-    } else {
-        y_grid_ID = floor((y_input - ymin) / y_spacing);
-    }
-    // TODO: For some reason, y_input sometimes is outside of the range that is 
-    // defined in the parameter input file. This might need to be checked later.
-    // if (y_grid_ID > 124) {
-    //     printf("x_input: %f, y_input: %f, z_input: %f\n", x_input, y_input, z_input);
-    // }
+    x_grid_ID = floor((x_input - xmin) / x_spacing);
+    y_grid_ID = floor((y_input - ymin) / y_spacing);
 
     Rec_node_ID[0] = Params_soil.numPointX * y_grid_ID + x_grid_ID;
     Rec_node_ID[1] = Params_soil.numPointX * y_grid_ID + (x_grid_ID + 1);
@@ -1801,6 +1803,7 @@ general3DVelocityModel_initparameters ( ) {
     loadDoubleArrayDynamically(x_file, &Soil_point_x, &Params_soil.numPointX);
     loadDoubleArrayDynamically(y_file, &Soil_point_y, &Params_soil.numPointY);
     loadDoubleArrayDynamically(z_file, &Soil_point_z, &Params_soil.numData);
+    Params_soil.minPointZ = min(Soil_point_z, Params_soil.numData);
     loadDoubleArrayDynamically(soilVs_file, &Soil_Vs_data, &Params_soil.numData);
     loadDoubleArrayDynamically(soilVp_file, &Soil_Vp_data, &Params_soil.numData);
     loadDoubleArrayDynamically(soilRho_file, &Soil_rho_data, &Params_soil.numData);
@@ -1819,16 +1822,18 @@ void general3DVelocityModel_init ( int32_t myID ) {
         }
     }
 
-    int int_message[4];
+    int int_message[5];
     int_message[0] = Params_soil.numLayerID;
     int_message[1] = Params_soil.numPointX;
     int_message[2] = Params_soil.numPointY;
     int_message[3] = Params_soil.numData;
-    MPI_Bcast(int_message, 4, MPI_INT, 0, comm_solver);
+    int_message[4] = Params_soil.minPointZ;
+    MPI_Bcast(int_message, 5, MPI_INT, 0, comm_solver);
     Params_soil.numLayerID = int_message[0];
     Params_soil.numPointX = int_message[1];
     Params_soil.numPointY = int_message[2];
     Params_soil.numData = int_message[3];
+    Params_soil.minPointZ = int_message[4];
 
     if (myID != 0) {
         Layer_start_ID  = (int*)malloc( sizeof(int) * Params_soil.numLayerID );
