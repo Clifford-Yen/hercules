@@ -1680,8 +1680,6 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     y_coord[2] = y_coord[0] + y_spacing;
     y_coord[3] = y_coord[2];
 
-    // TODO: The elevation sign (+/-) has to be examined carefully
-    // TODO: Give users an option to choose between whether the topography is embedded in the velocity model or not
     z_elevation[0] = thebase_zcoord + point_elevation(x_coord[0] + DRM_southwest_x, y_coord[0] + DRM_southwest_y);
     z_elevation[1] = thebase_zcoord + point_elevation(x_coord[1] + DRM_southwest_x, y_coord[1] + DRM_southwest_y);
     z_elevation[2] = thebase_zcoord + point_elevation(x_coord[2] + DRM_southwest_x, y_coord[2] + DRM_southwest_y);
@@ -1695,7 +1693,7 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     N4 = 0.25*(1.0-xi)*(1.0+eta);
 
     zi_elevation = N1 * z_elevation[0] + N2 * z_elevation[1] + N3 * z_elevation[2] + N4 * z_elevation[3];
-    z_input = z_input + zi_elevation;
+    z_input = z_input - zi_elevation;
 
     for (i = 0; i < 4; i++) {
         row1 = Layer_start_ID[Rec_node_ID[i]];
