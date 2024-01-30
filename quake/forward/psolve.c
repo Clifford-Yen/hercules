@@ -1578,11 +1578,19 @@ int profile_query(double depth, cvmpayload_t *props)
         if ((depth >= Param.theProfileZ[i]) && (depth < Param.theProfileZ[i + 1]))
         {
 
-            props->Vp = interpolate_profile_property(depth, i, i + 1, PROFILE_VP);
-            props->Vs = interpolate_profile_property(depth, i, i + 1, PROFILE_VS);
-            props->rho = interpolate_profile_property(depth, i, i + 1, PROFILE_RHO);
-            props->Qp = interpolate_profile_property(depth, i, i + 1, PROFILE_QP);
-            props->Qs = interpolate_profile_property(depth, i, i + 1, PROFILE_QS);
+            // props->Vp = interpolate_profile_property(depth, i, i + 1, PROFILE_VP);
+            // props->Vs = interpolate_profile_property(depth, i, i + 1, PROFILE_VS);
+            // props->rho = interpolate_profile_property(depth, i, i + 1, PROFILE_RHO);
+            // props->Qp = interpolate_profile_property(depth, i, i + 1, PROFILE_QP);
+            // props->Qs = interpolate_profile_property(depth, i, i + 1, PROFILE_QS);
+
+            // NOTE: Since we are not interpolating now, we can just use the value at 
+            // the lower index and make the overall performance a bit better.
+            props->Vp = Param.theProfileVp[i];
+            props->Vs = Param.theProfileVs[i];
+            props->rho = Param.theProfileRho[i];
+            props->Qp = Param.theProfileQp[i];
+            props->Qs = Param.theProfileQs[i];
 
             return 0;
         }
@@ -1940,8 +1948,6 @@ int get3DMaterial(cvmpayload_t *g_props, vector3D_t threeDVelModel_origin, doubl
     double x_rel = x_m - threeDVelModel_origin.x[0];
     double y_rel = y_m - threeDVelModel_origin.x[1];
     int res = getMaterialFrom3DVelocityModel(x_rel, y_rel, z_m, output, threeDVelModel_origin.x[0], threeDVelModel_origin.x[1]);
-    g_props->Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
-    g_props->Qp = 2.0 * g_props->Qs;
     if (res != 0) {
         if (Param.useProfile == NO) {
             res = cvm_query(Global.theCVMEp, y_m, x_m, z_m, g_props);
@@ -1955,6 +1961,8 @@ int get3DMaterial(cvmpayload_t *g_props, vector3D_t threeDVelModel_origin, doubl
         g_props->Vp = output[1];
         g_props->rho = output[2];
     }
+    g_props->Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
+    g_props->Qp = 2.0 * g_props->Qs;
     return res;
 }
 
