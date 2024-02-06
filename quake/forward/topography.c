@@ -499,7 +499,7 @@ double point_elevation ( double xo, double yo ) {
                 }
         }
         else {
- 
+                // NOTE: the following if statement is a sanity check. It should never be true.
                 if ( (ntp -1) < (np_ew * ( i + 1 ) + j + 1) ){
                     printf("np_ew=%d\n", np_ew); 
                     printf("i=%d\n", i);
@@ -1241,14 +1241,18 @@ topography_initparameters ( const char *parametersin ) {
     int8_t              Maxoctlevel;
     char                topo_dir[256];
     char                topo_file[256];
-    double              L_ew, L_ns, int_np_ew, int_np_ns, fract_np_ew, fract_np_ns, minvol;
+    double              L_ew, L_ns, int_np_ew, int_np_ns, fract_np_ew, fract_np_ns;
     char                etree_model[64], fem_meth[64], type_of_damping[64];
     etreetype_t         etreetype;
     topometh_t          topo_method;
 
-    char                consider_topo_nonlin[64], include_nonlin_analysis[64];
     noyesflag_t         considerTopoNonlin = -1;
     noyesflag_t         TopoBKT = NO;
+
+    /* Optional parameters */
+    double minvol = 0.1;
+    char consider_topo_nonlin[64] = "no", 
+        include_nonlin_analysis[64] = "no";
 
     /* Opens parametersin file */
     if ( ( fp = fopen(parametersin, "r" ) ) == NULL ) {
@@ -1265,17 +1269,19 @@ topography_initparameters ( const char *parametersin ) {
          ( parsetext(fp, "topography_directory",            's', &topo_dir                 ) != 0) ||
          ( parsetext(fp, "region_length_east_m",            'd', &L_ew                     ) != 0) ||
          ( parsetext(fp, "type_of_etree",                   's', &etree_model              ) != 0) ||
-         ( parsetext(fp, "min_enclosed_volume_perc",        'd', &minvol                   ) != 0) ||
          ( parsetext(fp, "region_length_north_m",           'd', &L_ns                     ) != 0) ||
-         ( parsetext(fp, "consider_nonlinear_topography",   's', &consider_topo_nonlin     ) != 0) ||
-         ( parsetext(fp, "type_of_damping",                 's', &type_of_damping          ) != 0) ||
-         ( parsetext(fp, "include_nonlinear_analysis",      's', &include_nonlin_analysis  ) != 0)  )
+         ( parsetext(fp, "type_of_damping",                 's', &type_of_damping          ) != 0)  )
     {
         fprintf( stderr,
                  "Error parsing topography parameters from %s\n",
                  parametersin );
         return -1;
     }
+
+    /* Optional parameters */
+    parsetext(fp, "min_enclosed_volume_perc", 'd', &minvol);
+    parsetext(fp, "include_nonlinear_analysis", 's', &include_nonlin_analysis);
+    parsetext(fp, "consider_nonlinear_topography", 's', &consider_topo_nonlin);
 
     if ( (strcasecmp(type_of_damping, "bkt" )  == 0) ||
          (strcasecmp(type_of_damping, "bkt2")  == 0) ||
@@ -1378,7 +1384,7 @@ topography_initparameters ( const char *parametersin ) {
 
 	np_ew              = ( L_ew / So + 1 );
 	np_ns              = ( L_ns / So + 1 );
-	ntp                = ( L_ew / So + 1 ) * ( L_ns / So + 1 );
+	ntp                = np_ew * np_ns;
 	theTopoInfo        = (double*)malloc( sizeof(double) * ntp );
 
 

@@ -413,6 +413,9 @@ static struct Global_t
     .theNodesLoadedList = NULL,
     .myForces = NULL,
     .fpsource = NULL,
+    .theXForMeshOrigin = 0.0,
+    .theYForMeshOrigin = 0.0,
+    .theZForMeshOrigin = 0.0,
     .theCVMRecordSize = sizeof(cvmrecord_t)};
 
 /* ------------------------------End of declarations------------------------------ */

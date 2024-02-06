@@ -59,6 +59,7 @@ void saveMeshCoordinatesForMatlab( mesh_t      *myMesh,       int32_t myID,
 
 	double   double_message[6];
 	double   *auxiliar;
+	tick_t   x_ticks, y_ticks, z_ticks;
 	double   x_coord, y_coord, z_coord;
 
 	edata_t  *edata_temp;
@@ -153,16 +154,16 @@ void saveMeshCoordinatesForMatlab( mesh_t      *myMesh,       int32_t myID,
 		edata_temp = myMesh->elemTable[i].data;
 
 		/* these are  lower left  coordinates */
-		x_coord = myMesh->nodeTable[j].x;
-		y_coord = myMesh->nodeTable[j].y;
-		z_coord = myMesh->nodeTable[j].z;
+		x_ticks = myMesh->nodeTable[j].x;
+		y_ticks = myMesh->nodeTable[j].y;
+		z_ticks = myMesh->nodeTable[j].z;
 
 
-		if ( (z_coord >= theMatlabZMin) && (z_coord < theMatlabZMax) )
+		if ( (z_ticks >= theMatlabZMin) && (z_ticks < theMatlabZMax) )
 		{
-			if ( (y_coord >= theMatlabYMin) && (y_coord < theMatlabYMax) )
+			if ( (y_ticks >= theMatlabYMin) && (y_ticks < theMatlabYMax) )
 			{
-				if ( (x_coord >= theMatlabXMin) && (x_coord <  theMatlabXMax))
+				if ( (x_ticks >= theMatlabXMin) && (x_ticks <  theMatlabXMax))
 				{
 
 					if ( counter == 0 ) {
@@ -181,15 +182,30 @@ void saveMeshCoordinatesForMatlab( mesh_t      *myMesh,       int32_t myID,
 					counter++;
 
 					for ( k = 0 ; k < 8 ; ++k ) {
-						/* j is like a node id here */
+						/* j is like a node id here, but it's different from myMesh->nodeTable[j].gnid */
 						j = myMesh->elemTable[i].lnid[k];
 
-						fwrite( &(myMesh->nodeTable[j].x), sizeof(myMesh->nodeTable[j].x),
-								1,meshcoordinates);
-						fwrite( &(myMesh->nodeTable[j].y), sizeof(myMesh->nodeTable[j].y),
-								1,meshcoordinates);
-						fwrite( &(myMesh->nodeTable[j].z), sizeof(myMesh->nodeTable[j].z),
-								1,meshcoordinates);
+						// NOTE: The original code that writes ticks instead of coordinates
+						// fwrite( &(myMesh->nodeTable[j].x), sizeof(myMesh->nodeTable[j].x),
+						// 		1,meshcoordinates);
+						// fwrite( &(myMesh->nodeTable[j].y), sizeof(myMesh->nodeTable[j].y),
+						// 		1,meshcoordinates);
+						// fwrite( &(myMesh->nodeTable[j].z), sizeof(myMesh->nodeTable[j].z),
+						// 		1,meshcoordinates);
+
+						// NOTE: If you want to write the global node id and element id, uncomment the following lines
+						// fwrite( &(myMesh->nodeTable[j].gnid), sizeof(myMesh->nodeTable[j].gnid),
+						// 		1,meshcoordinates);
+						// fwrite( &(myMesh->elemTable[i].geid), sizeof(myMesh->elemTable[i].geid),
+						// 		1,meshcoordinates);
+
+						// Write the coordinates of the nodes
+						x_coord = myMesh->nodeTable[j].x * ticksize;
+						y_coord = myMesh->nodeTable[j].y * ticksize;
+						z_coord = myMesh->nodeTable[j].z * ticksize;
+						fwrite( &x_coord, sizeof(x_coord), 1, meshcoordinates);
+						fwrite( &y_coord, sizeof(y_coord), 1, meshcoordinates);
+						fwrite( &z_coord, sizeof(z_coord), 1, meshcoordinates);
 					}
 
 					fwrite( &(edata_temp->Vs),  sizeof(edata_temp->Vs),  1, meshdata );
