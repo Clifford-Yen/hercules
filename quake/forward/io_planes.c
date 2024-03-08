@@ -446,12 +446,13 @@ void Old_planes_setup ( int32_t     myID, int32_t *thePlanePrintRate,
                     sprintf( planedisplacementsout, "%s/planedisplacements.%d",
                              thePlaneDirOut, iPlane );
                     fp0 = hu_fopen( planedisplacementsout, "w" );
-
                     thePlanes[iPlane].fpoutputfile = fp0;
-                    sprintf (planecoordsfile, "%s/planecoords.%d",
-                             thePlaneDirOut, iPlane);
-                    fp1 = hu_fopen (planecoordsfile, "w");
-                    thePlanes[iPlane].fpplanecoordsfile = fp1;
+
+                    // NOTE: Commented out by Clifford: Since planecoords files are not implemented, the files should not be created in the first place
+					// sprintf (planecoordsfile, "%s/planecoords.%d",
+                    //          thePlaneDirOut, iPlane);
+                    // fp1 = hu_fopen (planecoordsfile, "w");
+                    // thePlanes[iPlane].fpplanecoordsfile = fp1;
 		} /* for */
 	    } /* if ( (name != NULL) ... ) */
 	} /* while */
@@ -723,7 +724,8 @@ void Old_planes_close(int32_t myID, int theNumberOfPlanes)
     if (myID==0){
 	for (iPlane = 0; iPlane < theNumberOfPlanes ;iPlane++) {
 	    fclose( thePlanes[iPlane].fpoutputfile );
-	    fclose( thePlanes[iPlane].fpplanecoordsfile );
+	    // NOTE: Commented out by Clifford: Since planecoords files are not implemented, the files should not be created in the first place
+		// fclose( thePlanes[iPlane].fpplanecoordsfile );
 	}
     }
 }
