@@ -1963,9 +1963,9 @@ int get3DMaterial(cvmpayload_t *g_props, vector3D_t threeDVelModel_origin, doubl
         g_props->Vs = output[0];
         g_props->Vp = output[1];
         g_props->rho = output[2];
+        g_props->Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
+        g_props->Qp = 2.0 * g_props->Qs;
     }
-    g_props->Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
-    g_props->Qp = 2.0 * g_props->Qs;
     return res;
 }
 

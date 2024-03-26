@@ -1614,7 +1614,8 @@ static struct Params_soil_t {
     int numPointX;
     int numPointY;
     int numData;
-    int minPointZ;
+    double minPointZ;
+    double maxPointZ;
 } Params_soil;
 
 double max(double arr[], int size) {
@@ -1658,7 +1659,7 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     if (z_input < Params_soil.minPointZ) {
         return -1;
     }
-    if (!(x_input > xmin && x_input < xmax && y_input > ymin && y_input < ymax)) {
+    if (!(x_input >= xmin && x_input <= xmax && y_input >= ymin && y_input <= ymax)) {
         return -1;
     }
 
@@ -1706,9 +1707,9 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
                 break;
             }
             if (k == 0) { // In case Z is above the top layer specified in the model
-                zd_vs[i] = Soil_Vs_data[row1 + k];
-                zd_vp[i] = Soil_Vp_data[row1 + k];
-                zd_rho[i] = Soil_rho_data[row1 + k];
+                zd_vs[i] = Soil_Vs_data[row1];
+                zd_vp[i] = Soil_Vp_data[row1];
+                zd_rho[i] = Soil_rho_data[row1];
             }
         }
     }
@@ -1796,16 +1797,16 @@ general3DVelocityModel_initparameters ( ) {
     sprintf( soilVs_file,    "%s/vs.in",    "inputfiles/materialfiles" );
     sprintf( soilVp_file,    "%s/vp.in",    "inputfiles/materialfiles" );
     sprintf( soilRho_file,   "%s/rho.in",   "inputfiles/materialfiles" );
-
+    /* Load the data from the files */
     loadIntArrayDynamically(layerID_file, &Layer_start_ID, &Params_soil.numLayerID);
     loadDoubleArrayDynamically(x_file, &Soil_point_x, &Params_soil.numPointX);
     loadDoubleArrayDynamically(y_file, &Soil_point_y, &Params_soil.numPointY);
     loadDoubleArrayDynamically(z_file, &Soil_point_z, &Params_soil.numData);
     Params_soil.minPointZ = min(Soil_point_z, Params_soil.numData);
+    Params_soil.maxPointZ = max(Soil_point_z, Params_soil.numData);
     loadDoubleArrayDynamically(soilVs_file, &Soil_Vs_data, &Params_soil.numData);
     loadDoubleArrayDynamically(soilVp_file, &Soil_Vp_data, &Params_soil.numData);
     loadDoubleArrayDynamically(soilRho_file, &Soil_rho_data, &Params_soil.numData);
-
     return 0;
 }
 
@@ -1825,13 +1826,18 @@ void general3DVelocityModel_init ( int32_t myID ) {
     int_message[1] = Params_soil.numPointX;
     int_message[2] = Params_soil.numPointY;
     int_message[3] = Params_soil.numData;
-    int_message[4] = Params_soil.minPointZ;
     MPI_Bcast(int_message, 5, MPI_INT, 0, comm_solver);
     Params_soil.numLayerID = int_message[0];
     Params_soil.numPointX = int_message[1];
     Params_soil.numPointY = int_message[2];
     Params_soil.numData = int_message[3];
-    Params_soil.minPointZ = int_message[4];
+
+    double double_message[2];
+    double_message[0] = Params_soil.minPointZ;
+    double_message[1] = Params_soil.maxPointZ;
+    MPI_Bcast(double_message, 2, MPI_DOUBLE, 0, comm_solver);
+    Params_soil.minPointZ = double_message[0];
+    Params_soil.maxPointZ = double_message[1];
 
     if (myID != 0) {
         Layer_start_ID  = (int*)malloc( sizeof(int) * Params_soil.numLayerID );
