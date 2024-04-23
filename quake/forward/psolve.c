@@ -2054,6 +2054,13 @@ setrec(octant_t *leaf, double ticksize, void *data)
 
                 z_m = Global.theZForMeshOrigin + (leaf->lz + points[i_z] * halfticks) * ticksize;
 
+                // Clifford's NOTE: Try debugging. I realized that it's possible the point is outside the domain.
+                // But it seems like it's normal. oct_expand() will take care of the points outside the domain.
+                // ===== Print the coordinates of the point if it's outside the domain =====
+                // if (x_m < 0 || x_m > Param.theDomainX || y_m < 0 || y_m > Param.theDomainY || z_m < 0 || z_m > Param.theDomainZ) {
+                //     printf("Point outside the domain: (%f, %f, %f)\n", x_m, y_m, z_m);
+                // }
+
                 /* Shift the domain if topography with squashed etree is considered */
                 if ((Param.includeTopography == YES) && (get_theetree_type() == SQD))
                 {
@@ -2137,11 +2144,13 @@ outer_loop_label: /* in order to completely break out from the inner loop */
         edata->Vs = Param.theFactor * edata->edgesize / 2;
     }
     else if (edata->Vs <= Param.theVsCut)
-    { /* adjust Vs and Vp */
+    { /* adjust Vs, Vp, and rho */
         double VpVsRatio = edata->Vp / edata->Vs;
+        double RhoVpRatio = edata->rho / edata->Vp;
 
         edata->Vs = Param.theVsCut;
         edata->Vp = Param.theVsCut * VpVsRatio;
+        edata->rho = edata->Vp * RhoVpRatio;
     }
 
     return;
@@ -8628,7 +8637,8 @@ mesh_correct_properties(etree_t *cvm)
         {
             edata->Vs = Param.theVsCut;
             edata->Vp = Param.theVsCut * VpVsRatio;
-            /* edata->rho = edata->Vp * RhoVpRatio; */ /* Discuss with Jacobo */
+            // Clifford's NOTE: The following line is uncommented after discussing with Wenyang
+            edata->rho = edata->Vp * RhoVpRatio;
         }
 
         /*
