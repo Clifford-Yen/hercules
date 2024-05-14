@@ -1639,6 +1639,8 @@ double min(double arr[], int size) {
 }
 
 int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_input, double output[3], double DRM_southwest_x, double DRM_southwest_y) {
+    /* The z_input is the depth from the surface. If the topography is considered, 
+    it should has been corrected before calling this function. */
     int i, k;
 
     double zd_vs[4], zd_vp[4], zd_rho[4];
@@ -1681,10 +1683,10 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     y_coord[2] = y_coord[0] + y_spacing;
     y_coord[3] = y_coord[2];
 
-    z_elevation[0] = -thebase_zcoord + point_elevation(x_coord[0] + DRM_southwest_x, y_coord[0] + DRM_southwest_y);
-    z_elevation[1] = -thebase_zcoord + point_elevation(x_coord[1] + DRM_southwest_x, y_coord[1] + DRM_southwest_y);
-    z_elevation[2] = -thebase_zcoord + point_elevation(x_coord[2] + DRM_southwest_x, y_coord[2] + DRM_southwest_y);
-    z_elevation[3] = -thebase_zcoord + point_elevation(x_coord[3] + DRM_southwest_x, y_coord[3] + DRM_southwest_y);
+    z_elevation[0] = thebase_zcoord - point_elevation(x_coord[0] + DRM_southwest_x, y_coord[0] + DRM_southwest_y);
+    z_elevation[1] = thebase_zcoord - point_elevation(x_coord[1] + DRM_southwest_x, y_coord[1] + DRM_southwest_y);
+    z_elevation[2] = thebase_zcoord - point_elevation(x_coord[2] + DRM_southwest_x, y_coord[2] + DRM_southwest_y);
+    z_elevation[3] = thebase_zcoord - point_elevation(x_coord[3] + DRM_southwest_x, y_coord[3] + DRM_southwest_y);
 
     xi  = (x_input - x_coord[0])/x_spacing*2.0 - 1.0;
     eta = (y_input - y_coord[0])/y_spacing*2.0 - 1.0;
@@ -1693,14 +1695,18 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     N3 = 0.25*(1.0+xi)*(1.0+eta);
     N4 = 0.25*(1.0-xi)*(1.0+eta);
 
+    // The interpolated elevation at the input point
     zi_elevation = N1 * z_elevation[0] + N2 * z_elevation[1] + N3 * z_elevation[2] + N4 * z_elevation[3];
-    z_input = z_input + zi_elevation;
 
     for (i = 0; i < 4; i++) {
         row1 = Layer_start_ID[Rec_node_ID[i]];
         numLayers = Layer_start_ID[Rec_node_ID[i]+1] - Layer_start_ID[Rec_node_ID[i]];
         for (k = numLayers-1; k >= 0; k--) {
-            if (z_input >= z_elevation[i] + Soil_point_z[row1 + k]) {
+            /* NOTE: z_input + zi_elevation can be treated as a reference point 
+            (similar to thebase_zcoord). It then be shifted to one of the four
+            adjacent points and corrected to the depth from the surface with the
+            elevation at that point. */
+            if (z_input + zi_elevation >= z_elevation[i] + Soil_point_z[row1 + k]) {
                 zd_vs[i] = Soil_Vs_data[row1 + k];
                 zd_vp[i] = Soil_Vp_data[row1 + k];
                 zd_rho[i] = Soil_rho_data[row1 + k];

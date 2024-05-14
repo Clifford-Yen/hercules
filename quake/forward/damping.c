@@ -139,7 +139,6 @@ void damping_addforce(mesh_t *myMesh, mysolver_t *mySolver, fmatrix_t (*theK1)[8
     fvector_t deltaDisp[8];
 
     /* loop on the number of elements */
-    /* loop on the number of elements */
     for (lin_eindex = 0; lin_eindex < myLinearElementsCount; lin_eindex++)
     {
         elem_t *elemp;

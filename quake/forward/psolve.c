@@ -3346,7 +3346,7 @@ damping_statistics(
         edata = (edata_t *)elemp->data;
 
         /* the parameteres */
-        elementvalues[0] = 10 / edata->Vs;
+        elementvalues[0] = 25.0 / edata->Vs;
         /* (edata->Vs < 1500) ? 25 / edata->Vs : 5 / edata->Vs; */
         /* zeta */
         omega = 3.46410161514 / (edata->edgesize / edata->Vp);  /* freq in rad */
@@ -3564,10 +3564,12 @@ static void solver_set_critical_T()
             zeta = 0.05;
         }
 
+        // Clifford's NOTE: 3.46410161514 = sqrt(12) = 2*sqrt(3)
         omega = 3.46410161514 / ratio;
         a = zeta * Global.theABase;
         b = zeta * Global.theBBase;
         xi = (a / (2 * omega)) + (b * omega / 2);
+        // Clifford's NOTE: 0.57735026919 = 1/sqrt(3)
         dt_factor_X = 0.57735026919 * (1 - xi) * ratio;
         dt_factor_Z = 0.57735026919 * (1 - zeta) * ratio;
         VsVp = edata->Vs / edata->Vp;
@@ -4010,6 +4012,9 @@ static void solver_init()
 
     /* compute the damping parameters a/zeta and b/zeta */
     compute_setab(Param.theFreq, &Global.theABase, &Global.theBBase);
+    if (Global.myID == 0) {
+        printf("ABase = %f, BBase = %f\n", Global.theABase, Global.theBBase);
+    }
 
     /* find out the critical delta T of the current simulation */
     /* and goes for the damping statistics if falg is == 1     */
@@ -4028,8 +4033,6 @@ static void solver_init()
     {
         print_K_stdoutput();
     }
-
-    compute_setab(Param.theFreq, &Global.theABase, &Global.theBBase);
 
     /* allocation of memory */
     Global.mySolver = (mysolver_t *)malloc(sizeof(mysolver_t));
@@ -7545,22 +7548,6 @@ read_stations_info(const char *numericalin)
                      "Error opening numerical.in configuration file");
     }
 
-    auxiliar = (double *)malloc(sizeof(double) * 8);
-
-    if (parsedarray(fp, "domain_surface_corners", 8, auxiliar) != 0)
-    {
-        solver_abort(fname, NULL,
-                     "Error parsing domain_surface_corners field from %s\n",
-                     numericalin);
-    }
-
-    for (iCorner = 0; iCorner < 4; iCorner++)
-    {
-        Param.theSurfaceCornersLong[iCorner] = auxiliar[iCorner * 2];
-        Param.theSurfaceCornersLat[iCorner] = auxiliar[iCorner * 2 + 1];
-    }
-    free(auxiliar);
-
     if (parsetext(fp, "output_stations_print_rate", 'i',
                   &Param.theStationsPrintRate) != 0)
     {
@@ -8527,6 +8514,8 @@ mesh_correct_properties(etree_t *cvm)
                     int k;
                     if (iNorth == 1 && iEast == 1 && iDepth == 1 && Param.includeNonlinearAnalysis == YES)
                     {
+                        // NOTE from Clifford: This nonlinear section is only applicable for the Istanbul Velocity 
+                        // Model as the nonlinear_id is calculated based on the Istanbul Velocity Model.
 
                         // get nonlinear_id at the elment's center
                         double output[4] = {0.0}, x_rel, y_rel;

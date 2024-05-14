@@ -1876,6 +1876,7 @@ read_domain( FILE* fp )
     double length_east_m;
     double length_north_m;
     double depth_deep_m;
+    double auxiliar[8];
 
     if ((parsetext(fp, "region_origin_latitude_deg", 'd',
 		   &origin_latitude_deg) != 0) ||
@@ -1894,6 +1895,12 @@ read_domain( FILE* fp )
 
 	fprintf(stderr, "Error domain and source dir from physics.in");
 	return -1;
+    }
+
+    parsedarray(fp, "domain_surface_corners", 8, auxiliar);
+    for (int iCorner = 0; iCorner < 4; iCorner++) {
+        theSurfaceCornersLong[iCorner] = auxiliar[iCorner * 2];
+        theSurfaceCornersLat[iCorner] = auxiliar[iCorner * 2 + 1];
     }
 
     /* assign to global variables */
@@ -2051,7 +2058,6 @@ static int read_point_source(FILE *fp){
   double hypocenter_lat_deg, hypocenter_long_deg, hypocenter_depth_m;
   double source_strike_deg, source_dip_deg, source_rake_deg;
   double  moment_magnitude, moment_amplitude;
-  double auxiliar[8];
   int iCorner;
 
   /* You can either give M0 or Mw for a point Source */
@@ -2075,12 +2081,6 @@ static int read_point_source(FILE *fp){
 	 (parsetext(fp,"hypocenter_long_deg",'d',&hypocenter_long_deg)!= 0)){
       fprintf(stderr, "Err in hypocenter lon or lat:read_point_source\n");
       return -1;
-    }
-
-    parsedarray( fp, "domain_surface_corners", 8 ,auxiliar);
-    for ( iCorner = 0; iCorner < 4; iCorner++){
-      theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
-      theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
     }
   }
 
@@ -2267,22 +2267,6 @@ read_planewithkinks (FILE *fp)
 
   free(auxiliar);
 
-  /* corners of the surface */
-  auxiliar = (double *)malloc(sizeof(double)*8);
-  if ( auxiliar == NULL ) {
-    perror("Failed to allocate space in read planes");
-    MPI_Abort(MPI_COMM_WORLD, ERROR );
-    return -1;
-  }
-
-  parsedarray( fp, "domain_surface_corners", 8 ,auxiliar);
-  for ( iCorner = 0; iCorner < 4; iCorner++){
-    theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
-    theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
-  }
-
-  free(auxiliar);
-
   return 1;
 
 }
@@ -2314,7 +2298,6 @@ read_srfh_source ( FILE *fp, FILE *fpcoords, FILE *fparea, FILE *fpstrike,
 		   double globalDelayT, double surfaceShift )
 {
   int32_t iSrc;
-  double *auxiliar;
   int iCorner, iTime;
 
   if ( (parsetext(fp, "number_of_point_sources", 'i', &theNumberOfPointSources) != 0) ){
@@ -2343,23 +2326,6 @@ read_srfh_source ( FILE *fp, FILE *fpcoords, FILE *fparea, FILE *fpstrike,
        ( theSourceDtArray    == NULL) || (theSourceSlipFunArray == NULL) ){
     ABORT_PROGRAM ("Error source srfh matrices: read_srfh_source");
   }
-
-  /* Dorian: Moved for compability with the topography module  */
-  /* corners of the surface */
-  auxiliar = (double *)malloc(sizeof(double)*8);
-  if ( auxiliar == NULL ) {
-    perror(" Alloc auxiliar: read_srfh_source");
-    MPI_Abort(MPI_COMM_WORLD, ERROR );
-    return -1;
-  }
-  parsedarray( fp, "domain_surface_corners", 8 ,auxiliar);
-  for ( iCorner = 0; iCorner < 4; iCorner++){
-    theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
-    theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
-  }
-
-  free(auxiliar);
-  /* end corners of surface */
 
   /* read fault points description */
   for ( iSrc = 0; iSrc < theNumberOfPointSources; iSrc++ ){
@@ -3649,8 +3615,6 @@ broadcast_srfh_parameters( void )
 	return;
     }
 
-    MPI_Bcast( theSurfaceCornersLat,     4, MPI_DOUBLE, 0, comm_solver );
-    MPI_Bcast( theSurfaceCornersLong,    4, MPI_DOUBLE, 0, comm_solver );
     MPI_Bcast( &theNumberOfPointSources, 1, MPI_INT,    0, comm_solver );
 
     int count = theNumberOfPointSources;
@@ -3737,11 +3701,6 @@ broadcast_point_source_parameters( void )
     theSourceStrikeDeg   = d_buf[3];
     theSourceDipDeg      = d_buf[4];
     theSourceRakeDeg     = d_buf[5];
-
-    if (theLonlatOrCartesian == 0) {
-	MPI_Bcast( theSurfaceCornersLat,  4, MPI_DOUBLE, 0, comm_solver );
-	MPI_Bcast( theSurfaceCornersLong, 4, MPI_DOUBLE, 0, comm_solver );
-    }
 }
 
 
@@ -3770,9 +3729,6 @@ broadcast_plane_source_parameters( void )
 
     MPI_Bcast(theKinkLatArray, theNumberOfKinks, MPI_DOUBLE, 0,comm_solver);
     MPI_Bcast(theKinkLonArray, theNumberOfKinks, MPI_DOUBLE, 0,comm_solver);
-
-    MPI_Bcast( theSurfaceCornersLat,  4, MPI_DOUBLE, 0, comm_solver );
-    MPI_Bcast( theSurfaceCornersLong, 4, MPI_DOUBLE, 0, comm_solver );
 }
 
 
@@ -3860,6 +3816,10 @@ source_broadcast_parameters( void )
     }
     MPI_Bcast( theWindowDelay, theNumberOfTimeWindows, MPI_DOUBLE, 0,
 	       comm_solver );
+
+    /* broadcast the surface corners */
+    MPI_Bcast( theSurfaceCornersLat,  4, MPI_DOUBLE, 0, comm_solver );
+    MPI_Bcast( theSurfaceCornersLong, 4, MPI_DOUBLE, 0, comm_solver );
 
     /* broadcast source-type-specific parameters */
     broadcast_point_source_parameters();
