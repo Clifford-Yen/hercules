@@ -228,7 +228,7 @@ static double theForceGenerationTime = 0;
 static double theConcatTime = 0;
 static double theIOInitTime = 0;
 
-static char*  theSourceOutputDir = NULL;
+static char   theSourceOutputDir[256];
 
 
 /** Exported global configuration variable.  Default value = 100 MB */
@@ -240,17 +240,6 @@ static int read_planewithkinks (FILE *fp);
 
 
 static void compute_point_source_strike (ptsrc_t* ps);
-
-
-
-/**
- * Get the name of the output directory for the source files
- */
-const char*
-source_get_output_dir()
-{
-    return theSourceOutputDir;
-}
 
 int
 source_get_local_loaded_nodes_count()
@@ -3746,7 +3735,7 @@ source_broadcast_parameters( void )
     const int d_len = DOUBLE_ARRAY_LENGTH( d_buf );
 
     /* broadcast string parameters: source output dir */
-    broadcast_string( &theSourceOutputDir, 0, comm_solver );
+    MPI_Bcast(theSourceOutputDir, 256, MPI_CHAR, 0, comm_solver);
 
     /* group all int parameters in an array and then broadcast the array */
     i_buf[0] = theNumberOfTimeSteps;
@@ -3880,10 +3869,8 @@ source_read_type( FILE* fpsrc )
  *
  * \return 0 on success, -1 on error.
  */
-static int
-source_init_parameters( const char* physicsin,
-                        double      globalDelayT,
-                        double      surfaceShift )
+static int source_init_parameters(const char* physicsin, const char *source_directory_output,
+    double globalDelayT, double surfaceShift)
 {
     FILE* fparea, *fpstrike, *fpdip, *fprake, *fpslip, *fpcoords,
 	*fpslipfun;
@@ -3903,8 +3890,7 @@ source_init_parameters( const char* physicsin,
     }
 
     hu_config_get_string_req(fp, "source_directory", &src_dir_p, &src_dir_len);
-    hu_config_get_string_req(fp, "source_directory_output",
-			     &theSourceOutputDir, &sdo_len);
+    strcpy(theSourceOutputDir, source_directory_output);
 
     close_file( &fp );
 
@@ -4005,11 +3991,9 @@ source_init_parameters( const char* physicsin,
  *    return:
  *
  */
-int
-compute_print_source( const char *physicsin, octree_t *myoctree,
-		      mesh_t *mymesh, numerics_info_t numericsinformation,
-		      mpi_info_t mpiinformation, double globalDealyT,
-		      double surfaceShift )
+int compute_print_source(const char *physicsin, const char *source_directory_output,
+    octree_t *myoctree, mesh_t *mymesh, numerics_info_t numericsinformation,
+    mpi_info_t mpiinformation, double globalDealyT, double surfaceShift)
 {
     /*Mesh related */
     myOctree = myoctree;
@@ -4038,10 +4022,8 @@ compute_print_source( const char *physicsin, octree_t *myoctree,
     }
 
     if ( myID == 0 )
-	if ( source_init_parameters (
-	        physicsin,
-	        globalDealyT,
-	        surfaceShift ) == -1 ) {
+	if ( source_init_parameters (physicsin, source_directory_output,
+	        globalDealyT, surfaceShift ) == -1 ) {
 	    fprintf(stdout,"Err init_source_parameters failed");
 	    ABORTEXIT;
 	}

@@ -237,6 +237,47 @@ double **readBasin(char *filename, int *x_count, int *y_count, int *z_count, dou
     return data;
 }
 
+/* ---------- Creating the directory if it does not exist ---------- */
+void createDir(const char *path, const char *fname) {
+    struct stat st = {0}; // initializing all of its fields to zero
+    // Make a copy of the path because the ``strtok`` function modifies the string
+    char *path_copy = strdup(path);
+    char *dir = strtok(path_copy, "/");
+    char accum_path[256] = "";
+    /* NOTE: The ``strtok`` function uses a static buffer to keep track of what 
+    it's doing. The first time you call ``strtok``, you pass it the string you 
+    want to tokenize. strtok saves that string in its static buffer and returns 
+    a pointer to the first token.
+    When you call ``strtok`` with ``NULL`` as the first argument, strtok doesn't 
+    actually try to split ``NULL``. Instead, it looks at its static buffer to 
+    see if there's any leftover string from the last time it was called. If 
+    there is, it continues tokenizing that string.
+    Because it uses a static buffer, it's not thread-safe, and you can only 
+    tokenize one string at a time. If you try to use ``strtok`` to tokenize two 
+    strings at the same time, you'll get unexpected results because the calls to 
+    ``strtok`` will interfere with each other. */
+
+    // Handle absolute paths
+    if (path[0] == '/') {
+        strcat(accum_path, "/");
+    }
+    // Create the directory recursively if it doesn't exist
+    while (dir != NULL) {
+        strcat(accum_path, dir);
+        if (stat(accum_path, &st) == -1) {
+            /* The full permission set for directories is 0777 (read, write, 
+            execute for owner, group, and others). It would be subtracted by 
+            the umask value to get the actual permission set. */
+            if (mkdir(accum_path, 0777) == -1) {
+                solver_abort(fname, NULL, "Error creating directory %s\n", accum_path);
+            }
+        }
+        strcat(accum_path, "/");
+        dir = strtok(NULL, "/");
+    }
+    free(path_copy);
+}
+
 /* ---------- Static global variables ------------------------------------ */
 
 /* These are all of the input parameters - add new ones here */
@@ -251,6 +292,9 @@ static struct Param_t
     char mesh_etree_output_file[256];
     char planes_input_file[256];
     char basin_input_file[256];
+    char thePlaneDirOut[256];
+    char theSourceOutputDir[256];
+    char theMeshDirMatlab[256];
     double theVsCut;
     double theFactor;
     double theFreq;
@@ -360,7 +404,11 @@ static struct Param_t
     .the4DOutSize = 0,
     .theMeshOutFlag = 0,
     .useProfile = NO,
-    .theNumberOfLayers = 0};
+    .theNumberOfLayers = 0,
+    .theStationsDirOut = "outputfiles/stations",
+    .thePlaneDirOut = "outputfiles/planes",
+    .theSourceOutputDir = "outputfiles/srctmp",
+    .theMeshDirMatlab = "outputfiles/For_Matlab"};
 
 /* These are all of the remaining global variables - this list should not grow */
 static struct Global_t
@@ -797,7 +845,9 @@ static int32_t parse_parameters(const char *numericalin)
     char type_of_damping[64],
         checkpoint_path[256],
         use_parametricq[64],
-        use_infinite_qk[64];
+        use_infinite_qk[64],
+        which_drm_part[64],
+        drm_directory_full_path[256];
     /* Optional parameters */
     int32_t rate = 1000000;
     int number_output_planes = 0, 
@@ -822,7 +872,8 @@ static int32_t parse_parameters(const char *numericalin)
         include_nonlinear_analysis[64] = "no",
         include_incident_planewaves[64] = "no",
         include_hmgHalfSpace[64] = "no",
-        stiffness_calculation_method[64] = "effective";
+        stiffness_calculation_method[64] ="effective",
+        drm_directory[64] = "outputfiles/DRM";
 
     damping_type_t typeOfDamping = -1;
     stiffness_type_t stiffness_method = -1;
@@ -1092,11 +1143,13 @@ static int32_t parse_parameters(const char *numericalin)
         return -1;
     }
 
-    if (number_output_planes < 0)
-    {
+    if (number_output_planes < 0) {
         fprintf(stderr, "Illegal number of output planes %d\n",
                 number_output_planes);
         return -1;
+    } else if (number_output_planes > 0) {
+        parsetext(fp, "output_planes_directory", 's', &Param.thePlaneDirOut);
+        createDir(Param.thePlaneDirOut, __FUNCTION_NAME);
     }
 
     if (number_output_stations < 0)
@@ -1219,16 +1272,14 @@ static int32_t parse_parameters(const char *numericalin)
                      print_station_accelerations);
     }
 
-    if (strcasecmp(mesh_coordinates_for_matlab, "yes") == 0)
-    {
+    if (strcasecmp(mesh_coordinates_for_matlab, "yes") == 0) {
         meshCoordinatesForMatlab = YES;
-    }
-    else if (strcasecmp(mesh_coordinates_for_matlab, "no") == 0)
-    {
+        parsetext(fp, "mesh_coordinates_directory_for_matlab", 's', 
+            &Param.theMeshDirMatlab);
+        createDir(Param.theMeshDirMatlab, __FUNCTION_NAME);
+    } else if (strcasecmp(mesh_coordinates_for_matlab, "no") == 0) {
         meshCoordinatesForMatlab = NO;
-    }
-    else
-    {
+    } else {
         solver_abort(__FUNCTION_NAME, NULL,
                      "Unknown response for mesh coordinates"
                      "for matlab (yes or no): %s\n",
@@ -1250,16 +1301,26 @@ static int32_t parse_parameters(const char *numericalin)
                      include_buildings);
     }
 
-    if (strcasecmp(implement_drm, "yes") == 0)
-    {
+    if (strcasecmp(implement_drm, "yes") == 0) {
         implementdrm = YES;
-    }
-    else if (strcasecmp(implement_drm, "no") == 0)
-    {
+        parsetext(fp, "drm_directory", 's', &drm_directory);
+        if (parsetext(fp, "which_drm_part", 's', &which_drm_part) != 0) {
+            fprintf(stderr, "Error reading drm part from %s\n", numericalin);
+            return -1;
+        }
+        // Make sure ``which_drm_part`` is either ``part0``, ``part1``, or ``part2``
+        if (strcasecmp(which_drm_part, "part0") != 0 && strcasecmp(which_drm_part, "part1") != 0 && strcasecmp(which_drm_part, "part2") != 0) {
+            solver_abort(__FUNCTION_NAME, NULL,
+                         "Unknown response for which_drm_part (part0, part1, or part2): %s\n",
+                         which_drm_part);
+        }
+        // Create the directory if it does not exist
+        snprintf(drm_directory_full_path, sizeof(drm_directory_full_path), 
+            "%s/%s", drm_directory, which_drm_part);
+        createDir(drm_directory_full_path, __FUNCTION_NAME);
+    } else if (strcasecmp(implement_drm, "no") == 0) {
         implementdrm = NO;
-    }
-    else
-    {
+    } else {
         solver_abort(__FUNCTION_NAME, NULL,
                      "Unknown response for impelement_drm (yes or no): %s\n",
                      implement_drm);
@@ -1456,6 +1517,13 @@ static int32_t parse_parameters(const char *numericalin)
     Param.threeDVelocityModel = include3DVelModel;
 
     strcpy(Param.theCheckPointingDirOut, checkpoint_path);
+    if (Param.theCheckPointingRate != 0) {
+        // Create the directory if it does not exist
+        createDir(Param.theCheckPointingDirOut, __FUNCTION_NAME);
+    }
+
+    parsetext(fp, "source_directory_output", 's', &Param.theSourceOutputDir);
+    createDir(Param.theSourceOutputDir, __FUNCTION_NAME);
 
     monitor_print("\n\n---------------- Some Input Data ----------------\n\n");
     monitor_print("Vs cut:                             %f\n", Param.theVsCut);
@@ -7354,9 +7422,9 @@ source_init(const char *physicsin)
 
         /* it will create the files to be read each time step to
        load (force) the mesh */
-        if (compute_print_source(physicsin, Global.myOctree, Global.myMesh,
-                                 Global.theNumericsInformation, Global.theMPIInformation,
-                                 globalDelayT, surfaceShift))
+        if (compute_print_source(physicsin, Param.theSourceOutputDir, 
+            Global.myOctree, Global.myMesh, Global.theNumericsInformation, 
+            Global.theMPIInformation, globalDelayT, surfaceShift))
         {
             monitor_print("Err:cannot create source forces");
             MPI_Abort(MPI_COMM_WORLD, ERROR);
@@ -7604,9 +7672,8 @@ read_stations_info(const char *numericalin)
 
     free(auxiliar);
 
-    if (parsetext(fp, "output_stations_directory", 's', Param.theStationsDirOut) != 0)
-        solver_abort(fname, NULL, "Error parsing fields from %s\n",
-                     numericalin);
+    parsetext(fp, "output_stations_directory", 's', Param.theStationsDirOut);
+    createDir(Param.theStationsDirOut, fname);
 
     return;
 }
@@ -9165,7 +9232,7 @@ int main(int argc, char **argv)
 
     if (Param.storeMeshCoordinatesForMatlab == YES)
     {
-        saveMeshCoordinatesForMatlab(Global.myMesh, Global.myID, Param.parameters_input_file,
+        saveMeshCoordinatesForMatlab(Global.myMesh, Global.myID, Param.parameters_input_file, Param.theMeshDirMatlab,
                                      Global.myOctree->ticksize, Param.theTypeOfDamping, Global.theXForMeshOrigin,
                                      Global.theYForMeshOrigin, Global.theZForMeshOrigin, Param.includeBuildings);
     }
@@ -9189,11 +9256,10 @@ int main(int argc, char **argv)
     /* Initialize the output planes */
     if (Param.theNumberOfPlanes != 0)
     {
-        planes_setup(Global.myID, &Param.thePlanePrintRate, Param.IO_pool_pe_count,
-                     Param.theNumberOfPlanes, Param.parameters_input_file, get_surface_shift(),
-                     Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
-                     Param.theDomainX, Param.theDomainY, Param.theDomainZ,
-                     Param.planes_input_file);
+        planes_setup(Global.myID, &Param.thePlanePrintRate, Param.thePlaneDirOut, 
+            Param.IO_pool_pe_count, Param.theNumberOfPlanes, Param.parameters_input_file, 
+            get_surface_shift(), Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainX, Param.theDomainY, Param.theDomainZ, Param.planes_input_file);
     }
 
     /* Initialize the solver, source and output structures */

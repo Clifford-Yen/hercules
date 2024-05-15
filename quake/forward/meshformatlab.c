@@ -49,10 +49,10 @@ theMatlabZMax,   theMatlabZMin;
  * Saves coordinates and data of specified elements as an output binary file
  * for MATLAB. also print damping ratios for rayleigh
  */
-void saveMeshCoordinatesForMatlab( mesh_t      *myMesh,       int32_t myID,
-		const char  *parametersin, double  ticksize,
-		damping_type_t theTypeOfDamping, double xoriginm, double yoriginm,
-		double zoriginm, noyesflag_t includeBuildings)
+void saveMeshCoordinatesForMatlab(mesh_t *myMesh, int32_t myID, const char *parametersin, 
+    const char *mesh_coordinates_directory_for_matlab, double ticksize,
+    damping_type_t theTypeOfDamping, double xoriginm, double yoriginm,
+    double zoriginm, noyesflag_t includeBuildings)
 {
 
 	int      i, j, k, counter = 0;
@@ -91,10 +91,7 @@ void saveMeshCoordinatesForMatlab( mesh_t      *myMesh,       int32_t myID,
 					"Error opening parameters.in configuration file");
 		}
 
-		if ( parsetext ( fp, "mesh_coordinates_directory_for_matlab",'s',
-				theMeshDirMatlab )!= 0 ) {
-			solver_abort ( "saveMeshCoordinatesForMatlab", NULL,
-					"Error parsing fields from %s\n", parametersin); }
+		strcpy(theMeshDirMatlab, mesh_coordinates_directory_for_matlab);
 
 		if ( parsedarray( fp, "mesh_corners_matlab", 6 , auxiliar ) != 0)
 		{

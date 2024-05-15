@@ -54,11 +54,10 @@ extern int compute_csi_eta_dzeta( octant_t *octant, vector3D_t pointcoords,
 
 
 int  New_planes_print(int32_t myID, mysolver_t* mySolver, int theNumberOfPlanes);
-void New_planes_setup(int32_t myID, int32_t *thePlanePrintRate, int theNumberOfPlanes,
-		      const char *numericalin, double surfaceShift,
-		      double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-		      double theDomainX, double theDomainY, double theDomainZ,
-		      char* planes_input_file);
+void New_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *thePlaneDirOut, 
+    int theNumberOfPlanes, const char *numericalin, 
+    double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file);
 void New_planes_close(int32_t myID, int theNumberOfPlanes);
 void planes_IO_PES_main(int32_t myID);
 static void New_output_planes_construct_strips(int32_t myID, int theNumberOfPlanes);
@@ -66,11 +65,10 @@ static void New_output_planes_construct_strips(int32_t myID, int theNumberOfPlan
 static void print_planeinfo(int32_t myID, int theNumberOfPlanes);
 
 int  Old_planes_print(int32_t myID, mysolver_t* mySolver, int theNumberOfPlanes);
-void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, int theNumberOfPlanes, 
-		      const char *numericalin, double surfaceShift,
-		      double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-		      double theDomainX, double theDomainY, double theDomainZ,
-		      char* planes_input_file);
+void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char* thePlaneDirOut, 
+    int theNumberOfPlanes, const char *numericalin, 
+    double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file);
 void Old_planes_close(int32_t myID, int theNumberOfPlanes);
 static int  Old_print_plane_displacements(int32_t myID, int ThisPlane);
 static void Old_output_planes_construct_strips(int32_t myID, int theNumberOfPlanes);
@@ -120,23 +118,22 @@ int planes_print(int32_t myID, int IO_pool_pe_count, int theNumberOfPlanes, myso
     return 1;
 }
 
-void planes_setup(int32_t myID, int32_t *thePlanePrintRate, int IO_pool_pe_count, 
-                  int theNumberOfPlanes, const char *numericalin, double surfaceShift,
-		  double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-		  double theDomainX, double theDomainY, double theDomainZ,
-		  char* planes_input_file){
+void planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *thePlaneDirOut, 
+    int IO_pool_pe_count, int theNumberOfPlanes, const char *numericalin, 
+    double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file){
 
 //	IO_pool_pe_count = 1;
     if (IO_pool_pe_count)
-	New_planes_setup(myID, thePlanePrintRate, theNumberOfPlanes, numericalin, surfaceShift,
-			 theSurfaceCornersLong, theSurfaceCornersLat,
-                         theDomainX, theDomainY, theDomainZ,
-                         planes_input_file);
+    New_planes_setup(myID, thePlanePrintRate, thePlaneDirOut, 
+        theNumberOfPlanes, numericalin, 
+        surfaceShift, theSurfaceCornersLong, theSurfaceCornersLat,
+        theDomainX, theDomainY, theDomainZ, planes_input_file);
     else
-	Old_planes_setup(myID, thePlanePrintRate, theNumberOfPlanes, numericalin, surfaceShift,
-			 theSurfaceCornersLong, theSurfaceCornersLat,
-                         theDomainX, theDomainY, theDomainZ,
-                         planes_input_file);
+    Old_planes_setup(myID, thePlanePrintRate, thePlaneDirOut, 
+        theNumberOfPlanes, numericalin, 
+        surfaceShift, theSurfaceCornersLong, theSurfaceCornersLat,
+        theDomainX, theDomainY, theDomainZ, planes_input_file);
 }
 
 void planes_close(int32_t myID, int IO_pool_pe_count, int theNumberOfPlanes){
@@ -313,15 +310,11 @@ static int Old_print_plane_displacements(int32_t myID, int ThisPlane)
  * 2. It does not have a strip size limit.
  */
 
-void Old_planes_setup ( int32_t     myID, int32_t *thePlanePrintRate,
-			int theNumberOfPlanes,
-                        const char *numericalin,
-                        double      surfaceShift,
-			double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-			double theDomainX, double theDomainY, double theDomainZ,
-			char* planes_input_file) {
+void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *thePlaneDirOut,
+    int theNumberOfPlanes, const char *numericalin,
+    double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file) {
 
-    char thePlaneDirOut[256];
     static const char* fname = "output_planes_setup()";
     double     *auxiliar;
     char       planedisplacementsout[1024], planecoordsfile[1024];
@@ -355,13 +348,6 @@ void Old_planes_setup ( int32_t     myID, int32_t *thePlanePrintRate,
 	}
 	free(auxiliar);
 
-	if ((parsetext(fp, "output_planes_directory", 's',
-		       &thePlaneDirOut) != 0))
-	    {
-		solver_abort( fname, NULL,
-			      "Error parsing output planes directory from %s\n",
-			      numericalin );
-	    }
 	thePlanes = (plane_t *) malloc ( sizeof( plane_t ) * theNumberOfPlanes);
 	if ( thePlanes == NULL ) {
 	    solver_abort( fname, "Allocating memory for planes array",
@@ -773,17 +759,13 @@ void print_planeinfo(int32_t myID, int theNumberOfPlanes)
 /**************************************************************************/
 
 
-void New_planes_setup( int32_t     PENum, int32_t *thePlanePrintRate,
-		       int theNumberOfPlanes,
-                       const char *numericalin,
-                       double      surfaceShift,
-		       double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-		       double theDomainX, double theDomainY, double theDomainZ,
-                       char* planes_input_file) {
+void New_planes_setup(int32_t PENum, int32_t *thePlanePrintRate, const char *thePlaneDirOut,
+    int theNumberOfPlanes, const char *numericalin,
+    double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file) {
 
     static const char* fname = "new_output_planes_setup()";
     double     *auxiliar;
-    char       thePlaneDirOut[256];
     int        iPlane, iCorner;
     vector3D_t originPlaneCoords;
     int largestplanesize;
@@ -814,13 +796,6 @@ void New_planes_setup( int32_t     PENum, int32_t *thePlanePrintRate,
 	}
 	free(auxiliar);
 
-	if ((parsetext(fp, "output_planes_directory", 's',
-		       &thePlaneDirOut) != 0))
-	    {
-		solver_abort( fname, NULL,
-			      "Error parsing output planes directory from %s\n",
-			      numericalin );
-	    }
 	thePlanes = (plane_t *) malloc ( sizeof( plane_t ) * theNumberOfPlanes);
 	if ( thePlanes == NULL ) {
 	    solver_abort( fname, "Allocating memory for planes array",

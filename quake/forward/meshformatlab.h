@@ -20,10 +20,10 @@
 #ifndef MESHFORMATLAB_H_
 #define MESHFORMATLAB_H_
 
-void saveMeshCoordinatesForMatlab( mesh_t      *myMesh,       int32_t myID,
-                                   const char  *parametersin, double  ticksize,
-                                   damping_type_t theTypeOfDamping, double xoriginm, double yoriginm,
-                                   double zoriginm, noyesflag_t includeBuildings );
+void saveMeshCoordinatesForMatlab( mesh_t *myMesh, int32_t myID, const char *parametersin, 
+    const char *mesh_coordinates_directory_for_matlab, double ticksize,
+    damping_type_t theTypeOfDamping, double xoriginm, double yoriginm,
+    double zoriginm, noyesflag_t includeBuildings);
 
 #endif /* MESHFORMATLAB_H_ */
 
