@@ -1234,12 +1234,11 @@ int topo_toexpand (  octant_t *leaf,
 }
 
 int32_t
-topography_initparameters ( const char *parametersin ) {
+topography_initparameters (const char *parametersin, const char *topo_dir) {
     FILE                *fp;
     FILE                *fp_topo;
     int                 iTopo;
     int8_t              Maxoctlevel;
-    char                topo_dir[256];
     char                topo_file[256];
     double              L_ew, L_ns, int_np_ew, int_np_ns, fract_np_ew, fract_np_ns;
     char                etree_model[64], fem_meth[64], type_of_damping[64];
@@ -1266,7 +1265,6 @@ topography_initparameters ( const char *parametersin ) {
     if ( ( parsetext(fp, "maximum_octant_level",            'i', &Maxoctlevel              ) != 0) ||
          ( parsetext(fp, "computation_method",              's', &fem_meth                 ) != 0) ||
          ( parsetext(fp, "topographybase_zcoord",           'd', &thebase_zcoord           ) != 0) ||
-         ( parsetext(fp, "topography_directory",            's', &topo_dir                 ) != 0) ||
          ( parsetext(fp, "region_length_east_m",            'd', &L_ew                     ) != 0) ||
          ( parsetext(fp, "type_of_etree",                   's', &etree_model              ) != 0) ||
          ( parsetext(fp, "region_length_north_m",           'd', &L_ns                     ) != 0) ||
@@ -1406,14 +1404,14 @@ topography_initparameters ( const char *parametersin ) {
     return 0;
 }
 
-void topo_init ( int32_t myID, const char *parametersin ) {
+void topo_init (int32_t myID, const char *parametersin, const char *theTopoDir) {
 
     int     int_message[8];
     double  double_message[5];
 
     /* Capturing data from file --- only done by PE0 */
     if (myID == 0) {
-        if ( topography_initparameters( parametersin ) != 0 ) {
+        if ( topography_initparameters(parametersin, theTopoDir) != 0 ) {
             fprintf(stderr,"Thread 0: topography_local_init: "
                     "topography_initparameters error\n");
             MPI_Abort(MPI_COMM_WORLD, ERROR);

@@ -75,7 +75,7 @@ noyesflag_t    isTopoElement (mesh_t *myMesh, int32_t eindex, int32_t topoNonlin
 
 
 int    topo_toexpand            ( octant_t *leaf, double    ticksize, edata_t  *edata, double VsFactor );
-void   topo_init                ( int32_t myID, const char *parametersin );
+void   topo_init                (int32_t myID, const char *parametersin, const char *theTopoDir);
 void   topo_solver_init         ( int32_t  myID, mesh_t *myMesh );
 void   toponodes_mass           ( int32_t eindex, double nodes_mass[8], double M, double xo, double yo, double zo);
 void   compute_addforce_topo    ( mesh_t *myMesh, mysolver_t *mySolver, double theDeltaTSquared );

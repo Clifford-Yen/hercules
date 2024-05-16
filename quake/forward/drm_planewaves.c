@@ -1736,12 +1736,12 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
 void loadDoubleArrayDynamically(const char *filename, double **numbers, int *count) {
     FILE *file = fopen(filename, "r");
     if (file == NULL) {
-        perror("Error opening file");
+        fprintf(stderr, "Error opening file %s\n", filename);
         exit(1);
     }
     // Read the count of numbers
     if (fscanf(file, "%d", count) != 1) {
-        fprintf(stderr, "Error reading the count from the file.\n");
+        fprintf(stderr, "Error reading the count from the file %s.\n", filename);
         fclose(file);
         exit(1);
     }
@@ -1766,12 +1766,12 @@ void loadDoubleArrayDynamically(const char *filename, double **numbers, int *cou
 void loadIntArrayDynamically(const char *filename, int **numbers, int *count) {
     FILE *file = fopen(filename, "r");
     if (file == NULL) {
-        perror("Error opening file");
+        fprintf(stderr, "Error opening file %s\n", filename);
         exit(1);
     }
     // Read the count of numbers
     if (fscanf(file, "%d", count) != 1) {
-        fprintf(stderr, "Error reading the count from the file.\n");
+        fprintf(stderr, "Error reading the count from the file %s.\n", filename);
         fclose(file);
         exit(1);
     }

@@ -296,6 +296,7 @@ static struct Param_t
     char theSourceOutputDir[256];
     char theMeshDirMatlab[256];
     char the3DVelModelDir[256];
+    char theTopoDir[256];
     double theVsCut;
     double theFactor;
     double theFreq;
@@ -412,7 +413,8 @@ static struct Param_t
     .thePlaneDirOut = "outputfiles/planes",
     .theSourceOutputDir = "outputfiles/srctmp",
     .theMeshDirMatlab = "outputfiles/For_Matlab",
-    .the3DVelModelDir = "inputfiles/materialfiles"};
+    .the3DVelModelDir = "inputfiles/materialfiles",
+    .theTopoDir = "inputfiles/topography"};
 
 /* These are all of the remaining global variables - this list should not grow */
 static struct Global_t
@@ -654,11 +656,11 @@ static void read_parameters(int argc, char **argv)
     MPI_Bcast(Param.mesh_etree_output_file, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.planes_input_file, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.basin_input_file, 256, MPI_CHAR, 0, comm_solver);
-    MPI_Bcast(Param.theStationsDirOut, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.thePlaneDirOut, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.theSourceOutputDir, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.theMeshDirMatlab, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.the3DVelModelDir, 256, MPI_CHAR, 0, comm_solver);
+    MPI_Bcast(Param.theTopoDir, 256, MPI_CHAR, 0, comm_solver);
 
     /*Broadcast domain's coords */
     MPI_Bcast(Param.theSurfaceCornersLong, 4, MPI_DOUBLE, 0, comm_solver);
@@ -882,7 +884,7 @@ static int32_t parse_parameters(const char *numericalin)
         include_hmgHalfSpace[64] = "no",
         stiffness_calculation_method[64] ="effective",
         checkpoint_path[256] = "outputfiles/checkpoints",
-        drm_directory[64] = "outputfiles/DRM";
+        drm_directory[256] = "outputfiles/DRM";
 
     damping_type_t typeOfDamping = -1;
     stiffness_type_t stiffness_method = -1;
@@ -1345,6 +1347,7 @@ static int32_t parse_parameters(const char *numericalin)
     if (strcasecmp(include_topography, "yes") == 0)
     {
         haveTopography = YES;
+        parsetext(fp, "topography_directory", 's', &Param.theTopoDir);
     }
     else if (strcasecmp(include_topography, "no") == 0)
     {
@@ -9180,7 +9183,7 @@ int main(int argc, char **argv)
 
     if (Param.includeTopography == YES)
     {
-        topo_init(Global.myID, Param.parameters_input_file);
+        topo_init(Global.myID, Param.parameters_input_file, Param.theTopoDir);
     }
 
     if (Param.includeIncidentPlaneWaves == YES)
