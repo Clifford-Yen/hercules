@@ -1549,10 +1549,8 @@ void toponodes_mass(int32_t eindex, double nodes_mass[8], double M,
  * Prints statistics about number of topo elements and stations
  * Modified form nonlinear_print_stats.
  */
-void topo_print_stats(int32_t *topoElementsCount,
-                           int32_t *topoStationsCount,
-                           int32_t *topoNonlinElementsCount,
-                           int32_t  theGroupSize)
+void topo_print_stats(int32_t *topoElementsCount, int32_t *topoStationsCount,
+    int32_t *topoNonlinElementsCount, int32_t theGroupSize, const char *theTopoStatFilename)
 {
 
     int pid;
@@ -1560,7 +1558,7 @@ void topo_print_stats(int32_t *topoElementsCount,
     global_id_t totalStations = 0;
     global_id_t totaltopoNonlin = 0;
 
-    FILE *fp = hu_fopen( "stat-topo.txt", "w" );
+    FILE *fp = hu_fopen(theTopoStatFilename, "w");
 
     fputs( "\n"
            "# -------------------------------------------------------- \n"
@@ -1601,7 +1599,7 @@ void topo_print_stats(int32_t *topoElementsCount,
 
 }
 
-void topo_stats(int32_t myID, int32_t theGroupSize) {
+void topo_stats(int32_t myID, int32_t theGroupSize, const char *theTopoStatFilename) {
 
     int32_t *topoElementsCount = NULL;
     int32_t *topoStationsCount = NULL;
@@ -1622,8 +1620,8 @@ void topo_stats(int32_t myID, int32_t theGroupSize) {
 
     if ( myID == 0 ) {
 
-        topo_print_stats( topoElementsCount, topoStationsCount,topoNonlinElementsCount,
-                               theGroupSize);
+        topo_print_stats(topoElementsCount, topoStationsCount,
+            topoNonlinElementsCount, theGroupSize, theTopoStatFilename);
 
         xfree_int32_t( &topoElementsCount );
     }

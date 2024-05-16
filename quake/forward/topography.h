@@ -113,11 +113,9 @@ topometh_t get_topo_meth() ;
 //                                int         step,
 //                                fmatrix_t (*theK1)[8], fmatrix_t (*theK2)[8]);
 
-void topo_stats(int32_t myID, int32_t theGroupSize) ;
-void topo_print_stats(int32_t *topoElementsCount,
-                           int32_t *topoStationsCount,
-                           int32_t *topoNonlinElementsCount,
-                           int32_t  theGroupSize) ;
+void topo_stats(int32_t myID, int32_t theGroupSize, const char *theTopoStatFilename);
+void topo_print_stats(int32_t *topoElementsCount, int32_t *topoStationsCount,
+    int32_t *topoNonlinElementsCount, int32_t theGroupSize, const char *theTopoStatFilename);
 
 noyesflag_t    	get_topo_nonlin_flag();
 int   get_cube_partition(int32_t eindex);

@@ -320,6 +320,7 @@ static struct Param_t
     char *theSchedulePrintFilename;
     char *theScheduleStatFilename;
     char *theMeshStatFilename;
+    char *theTopoStatFilename;
     noyesflag_t printStationVelocities;
     noyesflag_t printK;
     noyesflag_t printStationAccelerations;
@@ -397,6 +398,7 @@ static struct Param_t
     .theSchedulePrintFilename = "schedule_info.txt",
     .theScheduleStatFilename = NULL,
     .theMeshStatFilename = NULL,
+    .theTopoStatFilename = NULL,
     .theSofteningFactor = 0,
     .theStepMeshingFactor = 0,
     .myNumberOfStations = 0,
@@ -1097,6 +1099,10 @@ static int32_t parse_parameters(const char *numericalin)
     size_t mesh_stat_len = 0;
     hu_config_get_string_def(fp, "stat_mesh_filename", &Param.theMeshStatFilename,
                              &mesh_stat_len, "stat-mesh.txt");
+    
+    size_t topo_stat_len = 0;
+    hu_config_get_string_def(fp, "stat_topo_filename", &Param.theTopoStatFilename,
+                             &topo_stat_len, "stat-topo.txt");
 
     /* sanity check */
     if (freq <= 0)
@@ -9294,7 +9300,7 @@ int main(int argc, char **argv)
 
     /* include additional info for topo stations */
     if (Param.includeTopography == YES)
-        topo_stats(Global.myID, Global.theGroupSize);
+        topo_stats(Global.myID, Global.theGroupSize, Param.theTopoStatFilename);
 
     if (Param.includeIncidentPlaneWaves == YES)
     {
