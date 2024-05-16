@@ -1318,6 +1318,8 @@ int get_halfspaceproperties( cvmpayload_t* payload ) {
  * ----------------------------------------------------------------------------
  */
 
+// TODO: The Istanbul model can be completely replaced by the 3D Velocity Model.
+
 static int      *n_layer2;
 static int      *Layer_start_ID;
 
@@ -1792,17 +1794,17 @@ void loadIntArrayDynamically(const char *filename, int **numbers, int *count) {
 }
 
 int32_t
-general3DVelocityModel_initparameters ( ) {
+general3DVelocityModel_initparameters (const char *the3DVelModelDir) {
     char    layerID_file[256], x_file[256], y_file[256], z_file[256], soilVs_file[256], 
             soilVp_file[256], soilRho_file[256];
     /* read material info */
-    sprintf( layerID_file,   "%s/index.in", "inputfiles/materialfiles" );
-    sprintf( x_file,         "%s/x.in",     "inputfiles/materialfiles" );
-    sprintf( y_file,         "%s/y.in",     "inputfiles/materialfiles" );
-    sprintf( z_file,         "%s/z.in",     "inputfiles/materialfiles" );
-    sprintf( soilVs_file,    "%s/vs.in",    "inputfiles/materialfiles" );
-    sprintf( soilVp_file,    "%s/vp.in",    "inputfiles/materialfiles" );
-    sprintf( soilRho_file,   "%s/rho.in",   "inputfiles/materialfiles" );
+    sprintf( layerID_file,   "%s/index.in", the3DVelModelDir );
+    sprintf( x_file,         "%s/x.in",     the3DVelModelDir );
+    sprintf( y_file,         "%s/y.in",     the3DVelModelDir );
+    sprintf( z_file,         "%s/z.in",     the3DVelModelDir );
+    sprintf( soilVs_file,    "%s/vs.in",    the3DVelModelDir );
+    sprintf( soilVp_file,    "%s/vp.in",    the3DVelModelDir );
+    sprintf( soilRho_file,   "%s/rho.in",   the3DVelModelDir );
     /* Load the data from the files */
     loadIntArrayDynamically(layerID_file, &Layer_start_ID, &Params_soil.numLayerID);
     loadDoubleArrayDynamically(x_file, &Soil_point_x, &Params_soil.numPointX);
@@ -1816,10 +1818,10 @@ general3DVelocityModel_initparameters ( ) {
     return 0;
 }
 
-void general3DVelocityModel_init ( int32_t myID ) {
+void general3DVelocityModel_init (int32_t myID, const char *the3DVelModelDir) {
     /* Capturing data from file --- only done by PE0 */
     if (myID == 0) {
-        if ( general3DVelocityModel_initparameters( ) != 0 ) {
+        if ( general3DVelocityModel_initparameters(the3DVelModelDir) != 0 ) {
             fprintf(stderr,"Thread 0: general3DVelocityModel_local_init: "
                     "general3DVelocityModel_initparameters error\n");
             MPI_Abort(MPI_COMM_WORLD, ERROR);

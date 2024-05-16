@@ -295,6 +295,7 @@ static struct Param_t
     char thePlaneDirOut[256];
     char theSourceOutputDir[256];
     char theMeshDirMatlab[256];
+    char the3DVelModelDir[256];
     double theVsCut;
     double theFactor;
     double theFreq;
@@ -408,7 +409,8 @@ static struct Param_t
     .theStationsDirOut = "outputfiles/stations",
     .thePlaneDirOut = "outputfiles/planes",
     .theSourceOutputDir = "outputfiles/srctmp",
-    .theMeshDirMatlab = "outputfiles/For_Matlab"};
+    .theMeshDirMatlab = "outputfiles/For_Matlab",
+    .the3DVelModelDir = "inputfiles/materialfiles"};
 
 /* These are all of the remaining global variables - this list should not grow */
 static struct Global_t
@@ -650,6 +652,11 @@ static void read_parameters(int argc, char **argv)
     MPI_Bcast(Param.mesh_etree_output_file, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.planes_input_file, 256, MPI_CHAR, 0, comm_solver);
     MPI_Bcast(Param.basin_input_file, 256, MPI_CHAR, 0, comm_solver);
+    MPI_Bcast(Param.theStationsDirOut, 256, MPI_CHAR, 0, comm_solver);
+    MPI_Bcast(Param.thePlaneDirOut, 256, MPI_CHAR, 0, comm_solver);
+    MPI_Bcast(Param.theSourceOutputDir, 256, MPI_CHAR, 0, comm_solver);
+    MPI_Bcast(Param.theMeshDirMatlab, 256, MPI_CHAR, 0, comm_solver);
+    MPI_Bcast(Param.the3DVelModelDir, 256, MPI_CHAR, 0, comm_solver);
 
     /*Broadcast domain's coords */
     MPI_Bcast(Param.theSurfaceCornersLong, 4, MPI_DOUBLE, 0, comm_solver);
@@ -843,7 +850,6 @@ static int32_t parse_parameters(const char *numericalin)
         threshold_damping, threshold_VpVs,
         qconstant, qalpha, qbeta;
     char type_of_damping[64],
-        checkpoint_path[256],
         use_parametricq[64],
         use_infinite_qk[64],
         which_drm_part[64],
@@ -873,6 +879,7 @@ static int32_t parse_parameters(const char *numericalin)
         include_incident_planewaves[64] = "no",
         include_hmgHalfSpace[64] = "no",
         stiffness_calculation_method[64] ="effective",
+        checkpoint_path[256] = "outputfiles/checkpoints",
         drm_directory[64] = "outputfiles/DRM";
 
     damping_type_t typeOfDamping = -1;
@@ -1039,7 +1046,10 @@ static int32_t parse_parameters(const char *numericalin)
     parsetext(fp, "mesh_etree_output_file", 's', &Param.mesh_etree_output_file);
     parsetext(fp, "simulation_output_rate", 'i', &rate);
     parsetext(fp, "checkpoint_path", 's', &checkpoint_path);
-    parsetext(fp, "planes_input_file", 's', &Param.planes_input_file);
+    /* If no plane input file specified, the plane input file is numercalin itself */
+    if (parsetext(fp, "planes_input_file", 's', &Param.planes_input_file) != 0) {
+        strcpy(Param.planes_input_file, numericalin);
+    };
     /* These parameters have been initialized as 0. If they are
     not set in the input file, their values will just be 0. */
     parsetext(fp, "number_output_planes", 'i', &number_output_planes);
@@ -1407,8 +1417,10 @@ static int32_t parse_parameters(const char *numericalin)
                      includeBasinVelModel);
     }
 
+    /* 3D Velocity Model */
     if (strcasecmp(threeDModel, "yes") == 0) {
         include3DVelModel = YES;
+        parsetext(fp, "3D_velocity_model_directory", 's', &Param.the3DVelModelDir);
         if ((parsetext(fp, "3D_velocity_model_origin_latitude_deg", 'd', &Param.the3DVelocityModelLat) != 0) ||
         (parsetext(fp, "3D_velocity_model_origin_longitude_deg", 'd', &Param.the3DVelocityModelLong) != 0))
         {
@@ -1424,6 +1436,9 @@ static int32_t parse_parameters(const char *numericalin)
                      "Unknown response for 3D_velocity_model (yes or no): %s\n",
                      include3DVelModel);
     }
+
+    parsetext(fp, "source_directory_output", 's', &Param.theSourceOutputDir);
+    createDir(Param.theSourceOutputDir, __FUNCTION_NAME);
 
     /* read domain corners */
     int iCorner;
@@ -1521,9 +1536,6 @@ static int32_t parse_parameters(const char *numericalin)
         // Create the directory if it does not exist
         createDir(Param.theCheckPointingDirOut, __FUNCTION_NAME);
     }
-
-    parsetext(fp, "source_directory_output", 's', &Param.theSourceOutputDir);
-    createDir(Param.theSourceOutputDir, __FUNCTION_NAME);
 
     monitor_print("\n\n---------------- Some Input Data ----------------\n\n");
     monitor_print("Vs cut:                             %f\n", Param.theVsCut);
@@ -9138,7 +9150,7 @@ int main(int argc, char **argv)
         Istanbul_init(Global.myID);
     } else if (Param.threeDVelocityModel == YES) {
         /* Initialize 3D velocity model */
-        general3DVelocityModel_init(Global.myID);
+        general3DVelocityModel_init(Global.myID, Param.the3DVelModelDir);
     }
 
     /* Initialize nonlinear parameters */
