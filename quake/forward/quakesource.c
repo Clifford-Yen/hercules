@@ -82,6 +82,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <mpi.h>
+#include <glob.h>
 
 #include "cvm.h"
 #include "commutil.h"
@@ -236,8 +237,29 @@ int theForcesBufferSize = 104857600;
 
 /*------------------------FUNCTIONS-------------------------------------------*/
 
-static int read_planewithkinks (FILE *fp);
+void delete_files(const char *path) {
+    /* ``path`` is a glob pattern of the files to delete. */
+    glob_t glob_result;
+    /* NOTE:
+        * GLOB_TILDE is a flag that tells glob() to expand the tilde (~) in the 
+            path to the home directory of the calling user.
+        * The third argument is a pointer to an error function that is called 
+            when an error occurs. By passing NULL, we tell glob() to use its 
+            default error reporting behavior, which is to return an error code.
+        * &glob_result is a pointer to a glob_t structure that glob() uses to 
+            store information about the files that match the pattern. After 
+            calling glob(), we can can use the ``gl_pathc`` field of this 
+            structure to get the number of matched files, and the ``gl_pathv`` 
+            field to get an array of strings containing the matched file names.
+    */
+    glob(path, GLOB_TILDE, NULL, &glob_result);
+    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+        remove(glob_result.gl_pathv[i]);
+    }
+    globfree(&glob_result);
+}
 
+static int read_planewithkinks (FILE *fp);
 
 static void compute_point_source_strike (ptsrc_t* ps);
 
@@ -3877,6 +3899,7 @@ static int source_init_parameters(const char* physicsin, const char *source_dire
 
     char source_dir[256], slipin[256], slipfunin[256];
     char coordsin[256], areain[256], strikein[256], dipin[256], rakein[256];
+    char force_process_file[256], sourcedescription_file[256];
 
     size_t src_dir_len = sizeof(source_dir);
     size_t sdo_len     = 0;
@@ -3891,6 +3914,13 @@ static int source_init_parameters(const char* physicsin, const char *source_dire
 
     hu_config_get_string_req(fp, "source_directory", &src_dir_p, &src_dir_len);
     strcpy(theSourceOutputDir, source_directory_output);
+    /* Clifford's NOTE and TODO: If the source output directory exists, remove 
+    all files named "force_process.*" and "sourcedescription.out" as they affect 
+    the results of the simulation. The root cause is still being investigated. */
+    snprintf(force_process_file, sizeof(force_process_file), "%s/force_process.*", theSourceOutputDir);
+    snprintf(sourcedescription_file, sizeof(sourcedescription_file), "%s/sourcedescription.out", theSourceOutputDir);
+    delete_files(force_process_file);
+    delete_files(sourcedescription_file);
 
     close_file( &fp );
 
