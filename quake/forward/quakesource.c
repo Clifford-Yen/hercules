@@ -1652,8 +1652,8 @@ static int tag_myForcesCycle(octant_t *octant, ptsrc_t *pointSource){
 
   int j, iNode;
 
-  tick_t edgeticks;
-  edgeticks = (tick_t)1 << (PIXELLEVEL - octant->level);
+//   tick_t edgeticks;
+//   edgeticks = (tick_t)1 << (PIXELLEVEL - octant->level);
 
   /* Go through my local elements to find which one matches the
      containing octant.*/
@@ -2069,7 +2069,6 @@ static int read_point_source(FILE *fp){
   double hypocenter_lat_deg, hypocenter_long_deg, hypocenter_depth_m;
   double source_strike_deg, source_dip_deg, source_rake_deg;
   double  moment_magnitude, moment_amplitude;
-  int iCorner;
 
   /* You can either give M0 or Mw for a point Source */
   moment_magnitude = 0;
@@ -2246,7 +2245,7 @@ static int
 read_planewithkinks (FILE *fp)
 {
 
-  int iKink, iCorner;
+  int iKink;
 
   if ( (parsetext(fp, "extended_number_of_kinks", 'i', &theNumberOfKinks) != 0) ){
     fprintf(stderr, "Cannot query plane source\n");
@@ -2309,7 +2308,7 @@ read_srfh_source ( FILE *fp, FILE *fpcoords, FILE *fparea, FILE *fpstrike,
 		   double globalDelayT, double surfaceShift )
 {
   int32_t iSrc;
-  int iCorner, iTime;
+  int iTime;
 
   if ( (parsetext(fp, "number_of_point_sources", 'i', &theNumberOfPointSources) != 0) ){
     fprintf(stderr, "Cannot query number of point source\n");
@@ -2655,7 +2654,8 @@ compute_myForces_planes( const char *physicsin )
   vector3D_t origin, p [ 4 ],localCoords,globalCoords;
 
   /* i/o related vars */
-  int32_t nodesPerCycle, memoryRequiredPerNode, memoryPerCycle;
+  int32_t nodesPerCycle, memoryRequiredPerNode;
+//   int32_t memoryPerCycle;
   int32_t iCycle, iInternal, iNode;
 
   /* convinient variables */
@@ -2865,7 +2865,7 @@ compute_myForces_planes( const char *physicsin )
   }
 
   nodesPerCycle = ( int32_t ) floor( theForcesBufferSize / memoryRequiredPerNode );
-  memoryPerCycle = nodesPerCycle * memoryRequiredPerNode;
+//   memoryPerCycle = nodesPerCycle * memoryRequiredPerNode;
   myNumberOfCycles = (int32_t)floor(myNumberOfNodesLoaded / nodesPerCycle );
   if ( myNumberOfNodesLoaded % nodesPerCycle != 0 )
     myNumberOfCycles += 1;
@@ -3241,8 +3241,9 @@ compute_myForces_point( const char* physicsin )
     }
 
 
-    int32_t memoryRequiredPerNode, nodesPerCycle,myNumberOfCycles, iCycle,
-	iInternal, iNode, memoryPerCycle;
+    int32_t memoryRequiredPerNode, nodesPerCycle, iCycle,
+	iInternal, iNode;
+    // int32_t myNumberOfCycles, memoryPerCycle;
 
     memoryRequiredPerNode = 3 * sizeof (vector3D_t) * theNumberOfTimeSteps;
     if (memoryRequiredPerNode > theForcesBufferSize) {
@@ -3253,8 +3254,8 @@ compute_myForces_point( const char* physicsin )
 
     /* note: the following ops are done using integer arithmetic */
     nodesPerCycle    = theForcesBufferSize / memoryRequiredPerNode;
-    memoryPerCycle   = nodesPerCycle * memoryRequiredPerNode;
-    myNumberOfCycles = ((myNumberOfNodesLoaded - 1) / nodesPerCycle) + 1;
+    // memoryPerCycle   = nodesPerCycle * memoryRequiredPerNode;
+    // myNumberOfCycles = ((myNumberOfNodesLoaded - 1) / nodesPerCycle) + 1;
 
     /* go through myForceTag and put the cycle for each node loaded */
     iCycle    = 0;
@@ -3304,7 +3305,8 @@ static int  compute_myForces_srfh(const char *physicsin){
   int ActivePE;
 
   /* i/o related vars */
-  int32_t nodesPerCycle, memoryRequiredPerNode, memoryPerCycle;
+  int32_t nodesPerCycle, memoryRequiredPerNode;
+//   int32_t memoryPerCycle;
   int32_t iCycle, iInternal, iNode;
 
   numStepsNecessary = theNumberOfTimeSteps;
@@ -3381,7 +3383,7 @@ static int  compute_myForces_srfh(const char *physicsin){
   }
 
   nodesPerCycle = (int32_t)floor( theForcesBufferSize / memoryRequiredPerNode );
-  memoryPerCycle = nodesPerCycle * memoryRequiredPerNode;
+//   memoryPerCycle = nodesPerCycle * memoryRequiredPerNode;
   myNumberOfCycles = (int32_t)floor(myNumberOfNodesLoaded / nodesPerCycle );
 
   if (myNumberOfNodesLoaded % nodesPerCycle != 0) {
@@ -3902,7 +3904,6 @@ static int source_init_parameters(const char* physicsin, const char *source_dire
     char force_process_file[256], sourcedescription_file[256];
 
     size_t src_dir_len = sizeof(source_dir);
-    size_t sdo_len     = 0;
     char* src_dir_p    = source_dir;
 
     /* read domain and source path from physics.in */

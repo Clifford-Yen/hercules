@@ -188,7 +188,7 @@ void compute_addforce_conventional( mesh_t* myMesh, mysolver_t* mySolver,
  */
 void compute_addforce_effective( mesh_t* myMesh, mysolver_t* mySolver )
 {
-    /* \TODO use mu_and_lamda to compute first,second and third coefficients */
+    /* \TODO use mu_and_lambda to compute first,second and third coefficients */
 
     fvector_t localForce[8];
     fvector_t curDisp[8];

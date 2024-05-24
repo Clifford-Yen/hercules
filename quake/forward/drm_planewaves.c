@@ -99,7 +99,7 @@ static int32_t          myDRM_Brd6 = 0;
 static int32_t          myDRM_Brd7 = 0;
 static int32_t          myDRM_Brd8 = 0;
 
-static double           topo_grid = 25.0;
+// static double           topo_grid = 25.0;
 
 extern int *global_np_ew;
 extern int *global_np_ns;
@@ -344,7 +344,8 @@ drm_planewaves_initparameters ( const char *parametersin ) {
 void PlaneWaves_solver_init( int32_t myID, mesh_t *myMesh, mysolver_t *mySolver) {
 
     int32_t theFaceElem_ew, theFaceElem_ns, theBaseElem;
-    double  theDRMdepth, DRM_D = theDRMBox_DepthElements * thedrmbox_esize;
+    // double  theDRMdepth;
+    double  DRM_D = theDRMBox_DepthElements * thedrmbox_esize;
 
     //double DRM_B = theDRMBox_halfwidthElements * thedrmbox_esize;
     double thebase_zcoord = get_thebase_topo();
@@ -352,7 +353,7 @@ void PlaneWaves_solver_init( int32_t myID, mesh_t *myMesh, mysolver_t *mySolver)
     theFaceElem_ew = 2 * theDRMBox_halfwidthElements_ew * theDRMBox_DepthElements;
     theFaceElem_ns = 2 * theDRMBox_halfwidthElements_ns * theDRMBox_DepthElements;
     theBaseElem    = 4 * theDRMBox_halfwidthElements_ew * theDRMBox_halfwidthElements_ns;
-    theDRMdepth    = DRM_D;
+    // theDRMdepth    = DRM_D;
 
     double DRM_EW = theDRMBox_halfwidthElements_ew * thedrmbox_esize;
     double DRM_NS = theDRMBox_halfwidthElements_ns * thedrmbox_esize;
@@ -384,14 +385,14 @@ void PlaneWaves_solver_init( int32_t myID, mesh_t *myMesh, mysolver_t *mySolver)
 
         elem_t     *elemp;
         node_t     *node0dat;
-        edata_t    *edata;
+        // edata_t    *edata;
         double      xo, yo, zo;
         int32_t	    node0;
 
         elemp    = &myMesh->elemTable[eindex]; //Takes the information of the "eindex" element
         node0    = elemp->lnid[0];             //Takes the ID for the zero node in element eindex
         node0dat = &myMesh->nodeTable[node0];
-        edata    = (edata_t *)elemp->data;
+        // edata    = (edata_t *)elemp->data;
 
         /* get coordinates of element zero node */
         xo = (node0dat->x)*(myMesh->ticksize);
@@ -803,8 +804,8 @@ void DRM_ForcesinElement ( mesh_t     *myMesh,
     int32_t	      node0;
     e_t*          ep;
 
-    int        aux;
-    double 	   remainder;
+    // int        aux;
+    // double 	   remainder;
 
     /* Capture the table of elements from the mesh and the size
      * This is what gives me the connectivity to nodes */

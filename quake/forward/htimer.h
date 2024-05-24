@@ -90,7 +90,7 @@ tv_reset (struct timeval* tv)
 static inline int
 tv_print (const struct timeval* tv, FILE* stream)
 {
-    return fprintf (stream, "%ld.%ld", tv->tv_sec, tv->tv_usec);
+    return fprintf (stream, "%ld.%d", tv->tv_sec, tv->tv_usec);
 }
 
 

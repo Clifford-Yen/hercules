@@ -4824,8 +4824,8 @@ octor_carvebuildings(octree_t *octree, int flag,
 {
 	tree_t  *tree = (tree_t *)octree;
 	oct_t   *oct, *nextOct;
-	int64_t  ecount;
-	int64_t  myCount = 0;
+	// int64_t  ecount;
+	// int64_t  myCount = 0;
 	edata_t *edata;
 
 
@@ -4839,7 +4839,7 @@ octor_carvebuildings(octree_t *octree, int flag,
 	}
 	/* Block ends here */
 
-	ecount = tree_countleaves(tree);
+	// ecount = tree_countleaves(tree);
 
 	oct = oct_getleftmost(tree->root);
 
@@ -4860,7 +4860,7 @@ octor_carvebuildings(octree_t *octree, int flag,
 
 		double Vp;
 
-		myCount++;
+		// myCount++;
 		edata = (edata_t *)oct->payload.leaf->data;
 
 		/* Octants belonging to pushdowns are eliminated here. yigit */

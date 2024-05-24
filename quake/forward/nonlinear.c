@@ -797,7 +797,7 @@ int32_t nonlinear_initparameters ( const char *parametersin,
 
     if ( ( strcasecmp(tension_cutoff, "yes") == 0 ) && ( ( materialmodel == DRUCKERPRAGER ) || ( materialmodel == MOHR_COULOMB ) ) ) {
         tensioncutoff = YES;
-    } else if ( ( strcasecmp(tension_cutoff, "yes") == 0 ) && ( ( materialmodel != DRUCKERPRAGER ) || ( materialmodel != MOHR_COULOMB ) ) ) {
+    } else if ( ( strcasecmp(tension_cutoff, "yes") == 0 ) && ( ( materialmodel != DRUCKERPRAGER ) && ( materialmodel != MOHR_COULOMB ) ) ) {
         fprintf(stderr,
                 ":Tension cutoff option available "
                 "only for Mohr-Coulomb or Drucker-Prager models: %s\n",
@@ -1014,7 +1014,7 @@ void nonlinear_print_stats(int32_t *nonlinElementsCount,
                            int32_t  theGroupSize)
 {
 
-    int pid, i;
+    int pid;
     global_id_t totalElements = 0;
     global_id_t totalStations = 0;
     global_id_t totalBottom   = 0;
@@ -1196,7 +1196,8 @@ void nonlinear_solver_init(int32_t myID, mesh_t *myMesh, double depth) {
         edata_t    *edata;
         nlconstants_t *ecp;
         double      mu, lambda;
-        double      elementVs, elementVp, PIn, tau_max, sigma_c, OCR;
+        double      elementVs, PIn, tau_max, sigma_c, OCR;
+        // double      elementVp;
 
         eindex = myNonlinElementsMapping[nl_eindex];
 
@@ -1217,7 +1218,7 @@ void nonlinear_solver_init(int32_t myID, mesh_t *myMesh, double depth) {
 
         /* get element Vs */
         elementVs   = (double)edata->Vs;
-        elementVp   = (double)edata->Vp;
+        // elementVp   = (double)edata->Vp;
 
         /* Calculate the lame constants and store in element */
 
@@ -1470,7 +1471,7 @@ void nonlinear_solver_init(int32_t myID, mesh_t *myMesh, double depth) {
         }
 
         // check and update topo-database if this is a VT toponolinear element. Do nothing if this is a FEM topoelement
-        if ( get_topo_nonlin_flag && isTopoElement ( myMesh, eindex, 1) && ( get_topo_meth() == VT ) ) {
+        if ( get_topo_nonlin_flag() && isTopoElement ( myMesh, eindex, 1) && ( get_topo_meth() == VT ) ) {
             //if ( get_topo_meth() == VT )
             ecp->isTopoNonlin = 1; // Identify it as nonlinear tetrahedron element
             get_tetraProps( eindex, ecp->tetraVol, &ecp->topoPart ); // get tetrahedral volumes and cube partition
@@ -2899,9 +2900,11 @@ void Euler2steps (nlconstants_t el_cnt, tensor_t  sigma_n, tensor_t De_dev, doub
                   double Dt, tensor_t sigma_ref, tensor_t *sigma_up, double kappa_n,
                   double *kappa_up, double *ErrB, double *ErrS, double *euler_error, int nsteps, double gamma_n) {
 
-    tensor_t Sdev_0, DSdev1, DSdev2, Sdev1, Sdev2, S_up, r_up, DSdev_diff, r2, r1, r_diff;
-    double   H_n, xi_n, H1, H2, xi1, xi2, K, kappa1, kappa2, Su=el_cnt.c, Lambda=el_cnt.lambda, G=el_cnt.mu, xi_up, err_tmp,
-             Sdev_error, r_error, kappa_err, xi_err, R;
+    tensor_t Sdev_0, DSdev1, DSdev2, Sdev1, Sdev2, S_up, r_up;
+    // tensor_t DSdev_diff, r2, r1, r_diff;
+    double   H_n, xi_n, H1, H2, xi1, xi2, K, kappa1, kappa2, Su=el_cnt.c, Lambda=el_cnt.lambda, G=el_cnt.mu, xi_up,
+             kappa_err, xi_err, R;
+    // double   err_tmp, Sdev_error, r_error;
 
     K       = Lambda + 2.0 * G / 3.0;
     De_dev  = scaled_tensor(De_dev,Dt);
@@ -3701,7 +3704,7 @@ double Pegasus2(double beta, nlconstants_t el_cnt, double gamma_n) {
 
 double get_kappaUnLoading_II( nlconstants_t el_cnt, tensor_t Sn, tensor_t De, double *Err, double *Psi, double gamma_n ) {
 
-    double R, A, B, C, kappa1, kappa2, beta, phi=0, G=el_cnt.mu, Su=el_cnt.c, kn=0, kntest;
+    double R, A, B, C, kappa1, kappa2, beta, phi=0, G=el_cnt.mu, Su=el_cnt.c, kn=0;
 
     R     = sqrt(8.0/3.0) * Su;
 
@@ -3978,7 +3981,8 @@ void material_update ( nlconstants_t constants, tensor_t e_n, tensor_t e_n1, ten
      */
 
     double c, h, kappa, mu, Sy, beta, alpha, gamma, phi, dil, Fs_pr, Lambda, dLambda=0.0,
-           Tol_sigma = 1e-03, cond1, cond2, psi0, m;
+           Tol_sigma = 1e-03, cond1, cond2, psi0;
+    // double m;
 
     h      = constants.h;
     c      = constants.c;
@@ -3996,7 +4000,7 @@ void material_update ( nlconstants_t constants, tensor_t e_n, tensor_t e_n1, ten
     Sy     = constants.Sstrain0*mu;
 
     psi0   = constants.psi0;
-    m      = constants.m;
+    // m      = constants.m;
 
     //phi_pt = gamma / (3.0*beta);
 
@@ -6132,10 +6136,10 @@ void compute_nonlinear_state ( mesh_t     *myMesh,
                 int flagTolSubSteps=0, flagNoSubSteps=0;
                 double ErrBA=0;
 
-                double po=90;
+                // double po=90;
 
-                if ( eindex==100575 && i==0 && step == 3 )
-                    po=78;
+                // if ( eindex==100575 && i==0 && step == 3 )
+                //     po=78;
 
                 material_update ( *enlcons,           tstrains->qp[i],      tstrains1->qp[i],   pstrains1->qp[i],  alphastress1->qp[i], epstr1->qv[i],   sigma0,        theDeltaT,
                                   &pstrains2->qp[i],  &alphastress2->qp[i], &stresses->qp[i],   &epstr2->qv[i],    &enlcons->fs[i],     &psi_n->qv[i],

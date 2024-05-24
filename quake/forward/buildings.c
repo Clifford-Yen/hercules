@@ -400,14 +400,14 @@ int bldg_exclusivesearch ( tick_t   x,
      */
 
     double   x_m, y_m, z_m;
-    double   esize;
+    // double   esize;
     bounds_t bounds;
 
     x_m = x * ticksize;
     y_m = y * ticksize;
     z_m = z * ticksize;
 
-    esize = (double)edata->edgesize; /* TODO: Seems like I don't need this */
+    // esize = (double)edata->edgesize; /* TODO: Seems like I don't need this */
 
     bounds = get_bldgbounds( bldg );
 

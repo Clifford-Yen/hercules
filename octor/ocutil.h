@@ -25,14 +25,8 @@
 /**
  * Macros with the format string for int64_t and uint64_t types.
  */
-#if (defined __WORDSIZE) && (__WORDSIZE == 64)
-#  define UINT64_FMT        "lu"
-#  define INT64_FMT     "ld"
-#  define MPI_INT64     MPI_LONG
-#else /*  __WORDSIZE && __WORDSIZE == 64 */
 #  define UINT64_FMT        "llu"
 #  define INT64_FMT     "lld"
 #  define MPI_INT64     MPI_LONG_LONG_INT
-#endif
 
 #endif /* OCUTIL_H */

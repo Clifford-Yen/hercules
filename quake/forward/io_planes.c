@@ -54,7 +54,7 @@ extern int compute_csi_eta_dzeta( octant_t *octant, vector3D_t pointcoords,
 
 
 int  New_planes_print(int32_t myID, mysolver_t* mySolver, int theNumberOfPlanes);
-void New_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *thePlaneDirOut, 
+void New_planes_setup(int32_t myID, int32_t *thePlanePrintRate, char *thePlaneDirOut, 
     int theNumberOfPlanes, const char *numericalin, 
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
     double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file);
@@ -118,7 +118,7 @@ int planes_print(int32_t myID, int IO_pool_pe_count, int theNumberOfPlanes, myso
     return 1;
 }
 
-void planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *thePlaneDirOut, 
+void planes_setup(int32_t myID, int32_t *thePlanePrintRate, char *thePlaneDirOut, 
     int IO_pool_pe_count, int theNumberOfPlanes, const char *numericalin, 
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
     double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file){
@@ -317,7 +317,8 @@ void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *theP
 
     static const char* fname = "output_planes_setup()";
     double     *auxiliar;
-    char       planedisplacementsout[1024], planecoordsfile[1024];
+    char       planedisplacementsout[1024]; 
+	// char       planecoordsfile[1024];
     int        iPlane, iCorner;
     vector3D_t originPlaneCoords;
     int        largestplanesize;
@@ -379,7 +380,7 @@ void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *theP
 		for ( iPlane = 0; iPlane < theNumberOfPlanes; iPlane++ ) {
 		    int fret0, fret1;
 		    FILE* fp0;
-		    FILE* fp1;
+		    // FILE* fp1;
 		    fret0 = fscanf( fp_planes," %lf %lf %lf",
 				    &thePlanes[iPlane].origincoords.x[0],
 				    &thePlanes[iPlane].origincoords.x[1],
@@ -759,7 +760,7 @@ void print_planeinfo(int32_t myID, int theNumberOfPlanes)
 /**************************************************************************/
 
 
-void New_planes_setup(int32_t PENum, int32_t *thePlanePrintRate, const char *thePlaneDirOut,
+void New_planes_setup(int32_t PENum, int32_t *thePlanePrintRate, char *thePlaneDirOut,
     int theNumberOfPlanes, const char *numericalin,
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
     double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file) {
@@ -1367,10 +1368,11 @@ void planes_IO_PES_main(int32_t PEnum){
     }/*while*/
 
     /* Close all planes.  Will need to make sure these are seperated on multiple PEs*/
-    int ret;
+    // int ret;
     for (iPlane = 0; iPlane < theNumberOfPlanes ;iPlane++){
-	ret = fclose( thePlanes[iPlane].fpoutputfile );
-	/* if (!ret) printf("Error closing plane file %d!!!\n", iPlane);  Sort this out later*/
+		fclose( thePlanes[iPlane].fpoutputfile );
+		// ret = fclose( thePlanes[iPlane].fpoutputfile );
+		// if (!ret) printf("Error closing plane file %d!!!\n", iPlane);  /* Sort this out later */
     }
 
     return;

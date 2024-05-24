@@ -15,5 +15,3 @@ JPEG_LIB = $(JPEG_DIR)/libjpeg.a
 CVM_DIR = $(WORKDIR)/quake/cvm
 
 FORWARD_DIR = $(WORKDIR)/quake/forward
-
--include $(WORKDIR)/user.mk

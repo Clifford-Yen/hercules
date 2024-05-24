@@ -65,7 +65,7 @@ TARGET = qmesh psolve single_query q4showmeta
 
 qmesh: qmesh.o
 
-psolve: ${PSOLVE_OBJECTS} ${OCTOR_LIB}
+psolve: ${PSOLVE_OBJECTS} 
 	$(LD) $^ \
 	$(LOADLIBES) \
 	$(LDFLAGS) \

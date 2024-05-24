@@ -2226,7 +2226,7 @@ outer_loop_label: /* in order to completely break out from the inner loop */
     edata->Vs = g_props_min.Vs;
     edata->rho = g_props_min.rho;
 
-    if (res != 0 && g_props_min.Vs == DBL_MAX)
+    if (res != 0 && g_props_min.Vs == FLT_MAX)
     {
         /* all the queries failed, then center out of bound point. Set Vs
          * to force split */
@@ -3937,7 +3937,7 @@ static void get_minimum_edge()
 {
     int32_t eindex;
     double min_h = 1e32, min_h_global;
-    int32_t min_h_elem_index;
+    // int32_t min_h_elem_index;
 
     /* Find the minimal h/Vp in the domain */
     for (eindex = 0; eindex < Global.myMesh->lenum; eindex++)
@@ -3954,7 +3954,7 @@ static void get_minimum_edge()
         if (h < min_h)
         {
             min_h = h;
-            min_h_elem_index = eindex;
+            // min_h_elem_index = eindex;
         }
     }
 
@@ -4558,7 +4558,8 @@ static int
 read_myForces(int32_t timestep, double dt)
 {
     off_t whereToRead;
-    size_t to_read, read_count;
+    size_t to_read;
+    // size_t read_count;
     int interval, i;
 
     if (get_sourceType() == SRFH)
@@ -4583,8 +4584,10 @@ read_myForces(int32_t timestep, double dt)
         hu_fseeko(Global.fpsource, whereToRead, SEEK_SET);
 
         to_read = Global.theNodesLoaded * 3;
-        read_count = hu_fread(aux1, sizeof(double), to_read, Global.fpsource);
-        read_count = hu_fread(aux2, sizeof(double), to_read, Global.fpsource);
+        // read_count = hu_fread(aux1, sizeof(double), to_read, Global.fpsource);
+        // read_count = hu_fread(aux2, sizeof(double), to_read, Global.fpsource);
+        hu_fread(aux1, sizeof(double), to_read, Global.fpsource);
+        hu_fread(aux2, sizeof(double), to_read, Global.fpsource);
 
         for (i = 0; i < Global.theNodesLoaded; i++)
         {
@@ -4602,7 +4605,8 @@ read_myForces(int32_t timestep, double dt)
         hu_fseeko(Global.fpsource, whereToRead, SEEK_SET);
 
         to_read = Global.theNodesLoaded * 3;
-        read_count = hu_fread(Global.myForces, sizeof(double), to_read, Global.fpsource);
+        // read_count = hu_fread(Global.myForces, sizeof(double), to_read, Global.fpsource);
+        hu_fread(Global.myForces, sizeof(double), to_read, Global.fpsource);
     }
 
     return 0; /* if we got here everything went OK */
@@ -4624,9 +4628,9 @@ solver_debug_overflow(mysolver_t *solver, mesh_t *mesh, int step)
     for (nindex = 0; nindex < mesh->nharbored; nindex++)
     {
         fvector_t *tm2Disp;
-        n_t *np;
+        // n_t *np;
 
-        np = &solver->nTable[nindex];
+        // np = &solver->nTable[nindex];
         tm2Disp = solver->tm2 + nindex;
 
         max_disp = (max_disp > tm2Disp->f[0]) ? max_disp : tm2Disp->f[0];
@@ -4800,14 +4804,14 @@ static void solver_write_checkpoint(int step, int start_step)
  * \note Globals used:
  * - Param.theRate (read)
  */
-static void solver_output_wavefield(int step)
-{
-    if (DO_OUTPUT && (step % Param.theRate == 0))
-    {
-        /* output the current timestep */
-        do_solver_output();
-    }
-}
+// static void solver_output_wavefield(int step)
+// {
+//     if (DO_OUTPUT && (step % Param.theRate == 0))
+//     {
+//         /* output the current timestep */
+//         do_solver_output();
+//     }
+// }
 
 /**
  * \note Globals used:
@@ -7587,10 +7591,10 @@ compute_csi_eta_dzeta(octant_t *octant, vector3D_t pointcoords,
     if ((Param.includeTopography == YES) && (isTopoElement(Global.myMesh, eindex, 0)) && (get_topo_meth() == VT) && (Param.drmImplement == NO))
     {
         elem_t *elemp;
-        edata_t *edata;
+        // edata_t *edata;
 
         elemp = &Global.myMesh->elemTable[eindex];
-        edata = (edata_t *)elemp->data;
+        // edata = (edata_t *)elemp->data;
 
         /* Calculate the element's origin */
         double xo = Global.myMesh->ticksize * octant->lx;
@@ -7624,7 +7628,7 @@ read_stations_info(const char *numericalin)
 {
     static const char *fname = __FUNCTION_NAME;
 
-    int iStation, iCorner;
+    int iStation;
     double lon, lat, depth, *auxiliar;
     FILE *fp;
 
@@ -8417,7 +8421,7 @@ output_get_stats(void)
 {
     output_stats_t disp_stats, vel_stats;
     int ret = 0;
-    double avg_tput = 0;
+    // double avg_tput = 0;
 
     if (Param.theOutputParameters.parallel_output)
     {
@@ -8430,15 +8434,15 @@ output_get_stats(void)
          * if both displacement and velocity where written out, prefer
          * the displacement stat.
          */
-        if (Param.theOutputParameters.output_velocity)
-        {
-            avg_tput = vel_stats.tput_avg;
-        }
+        // if (Param.theOutputParameters.output_velocity)
+        // {
+        //     avg_tput = vel_stats.tput_avg;
+        // }
 
-        if (Param.theOutputParameters.output_displacement)
-        {
-            avg_tput = disp_stats.tput_avg;
-        }
+        // if (Param.theOutputParameters.output_displacement)
+        // {
+        //     avg_tput = disp_stats.tput_avg;
+        // }
     }
 
     return ret;

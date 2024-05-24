@@ -404,13 +404,14 @@ output_stats_update (po_stat_counters_t* stats, double val)
 static void inline
 po_debug_msg (const char* msg, ...)
 {
-    int ret;
+    // int ret;
 
     if (po_debug_output_ && po_debug_fp_ != NULL) {
         va_list ap;
 
         va_start (ap, msg);
-        ret =  vfprintf (po_debug_fp_, msg, ap);
+        // ret =  vfprintf (po_debug_fp_, msg, ap);
+        vfprintf (po_debug_fp_, msg, ap);
 	va_end (ap);
     }
 

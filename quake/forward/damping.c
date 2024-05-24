@@ -217,7 +217,7 @@ void calc_conv_optimized(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, d
     int32_t eindex;
     int i;
 
-    double rmax = 2. * M_PI * theFreq * theDeltaT;
+    // double rmax = 2. * M_PI * theFreq * theDeltaT;
     int32_t   lin_eindex;
 
     double cdt;
@@ -343,7 +343,7 @@ void calc_conv(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, double theD
     int32_t eindex;
     int i;
 
-    double rmax = 2. * M_PI * theFreq * theDeltaT;
+    // double rmax = 2. * M_PI * theFreq * theDeltaT;
     int32_t   lin_eindex;
 
     double cdt;
@@ -495,7 +495,7 @@ void calc_conv(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, double theD
  */
 void constant_Q_addforce_optimized(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, double theDeltaT, double theDeltaTSquared, damping_type_t typeOfDamping)
 {
-    /* \todo use mu_and_lamda to compute first,second and third coefficients */
+    /* \todo use mu_and_lambda to compute first,second and third coefficients */
 
     int i;
     fvector_t localForce[8];
@@ -665,7 +665,7 @@ void constant_Q_addforce_optimized(mesh_t *myMesh, mysolver_t *mySolver, double 
 
 void constant_Q_addforce(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, double theDeltaT, double theDeltaTSquared, damping_type_t typeOfDamping)
 {
-    /* \todo use mu_and_lamda to compute first,second and third coefficients */
+    /* \todo use mu_and_lambda to compute first,second and third coefficients */
 
     int i;
     fvector_t localForce[8];
@@ -754,12 +754,13 @@ void constant_Q_addforce(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, d
 
             for (i = 0; i < 8; i++) {
 
-                fvector_t *tm1Disp, *tm2Disp;
+                fvector_t *tm1Disp;
+                // fvector_t *tm2Disp;
                 int32_t    lnid;
 
                 lnid = elemp->lnid[i];
                 tm1Disp = mySolver->tm1 + lnid;
-                tm2Disp = mySolver->tm2 + lnid;
+                // tm2Disp = mySolver->tm2 + lnid;
 
                 damping_vector_shear[i].f[0] = tm1Disp->f[0];
                 damping_vector_shear[i].f[1] = tm1Disp->f[1];
@@ -825,12 +826,13 @@ void constant_Q_addforce(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, d
 
             for (i = 0; i < 8; i++) {
 
-                fvector_t *tm1Disp, *tm2Disp;
+                fvector_t *tm1Disp;
+                // fvector_t *tm2Disp;
                 int32_t    lnid;
 
                 lnid = elemp->lnid[i];
                 tm1Disp = mySolver->tm1 + lnid;
-                tm2Disp = mySolver->tm2 + lnid;
+                // tm2Disp = mySolver->tm2 + lnid;
 
                 damping_vector_kappa[i].f[0] = tm1Disp->f[0];
                 damping_vector_kappa[i].f[1] = tm1Disp->f[1];
@@ -929,7 +931,7 @@ void constant_Q_addforce(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, d
 
 void constant_Q_addforce_simplifiedConv_old(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, double theDeltaT, double theDeltaTSquared, damping_type_t typeOfDamping)
 {
-    /* \todo use mu_and_lamda to compute first,second and third coefficients */
+    /* \todo use mu_and_lambda to compute first,second and third coefficients */
 
     int i;
     fvector_t localForce[8];
@@ -955,12 +957,12 @@ void constant_Q_addforce_simplifiedConv_old(mesh_t *myMesh, mysolver_t *mySolver
         e_t    *ep;
         edata_t *edata;
 
-        double a0_shear, a1_shear, a2_shear,
-        a0_kappa, a1_kappa, a2_kappa,
-        g0_shear, g1_shear, g2_shear,
-        g0_kappa, g1_kappa, g2_kappa,
-        b_shear, b_kappa,
-        csum, csumk, phi_shear, psi_shear, phi_kappa, psi_kappa;
+        double a0_shear, a1_shear,
+        a0_kappa, a1_kappa,
+        g0_shear, g1_shear,
+        g0_kappa, g1_kappa,
+        b_shear, b_kappa;
+        // double a2_shear, a2_kappa, g2_shear, g2_kappa;
 
         eindex = myLinearElementsMapper[lin_eindex];
         elemp = &myMesh->elemTable[eindex];
@@ -969,21 +971,21 @@ void constant_Q_addforce_simplifiedConv_old(mesh_t *myMesh, mysolver_t *mySolver
 
         a0_shear = edata->a0_shear;
         a1_shear = edata->a1_shear;
-        a2_shear = edata->a2_shear;
+        // a2_shear = edata->a2_shear;
         b_shear  = edata->b_shear;
 
         g0_shear = edata->g0_shear;
         g1_shear = edata->g1_shear;
-        g2_shear = edata->g2_shear;
+        // g2_shear = edata->g2_shear;
 
         a0_kappa   = edata->a0_kappa;
         a1_kappa   = edata->a1_kappa;
-        a2_kappa   = edata->a2_kappa;
+        // a2_kappa   = edata->a2_kappa;
         b_kappa    = edata->b_kappa;
 
         g0_kappa   = edata->g0_kappa;
         g1_kappa   = edata->g1_kappa;
-        g2_kappa   = edata->g2_kappa;
+        // g2_kappa   = edata->g2_kappa;
 
         double coef_shear = b_shear / rmax;
         double coef_kappa = b_kappa / rmax;
@@ -991,9 +993,10 @@ void constant_Q_addforce_simplifiedConv_old(mesh_t *myMesh, mysolver_t *mySolver
         for (i = 0; i < 8; i++) {
 
             fvector_t *tm1Disp, *tm2Disp;
-            int32_t    lnid, cindex;
+            int32_t    lnid;
+            // int32_t    cindex;
 
-            cindex = eindex * 8 + i;
+            // cindex = eindex * 8 + i;
             lnid = elemp->lnid[i];
 
             tm1Disp = mySolver->tm1 + lnid;
@@ -1073,7 +1076,7 @@ void constant_Q_addforce_simplifiedConv_old(mesh_t *myMesh, mysolver_t *mySolver
 
 void constant_Q_addforce_simplifiedConvolution(mesh_t *myMesh, mysolver_t *mySolver, double theFreq, double theDeltaT, double theDeltaTSquared, damping_type_t typeOfDamping)
 {
-    /* \todo use mu_and_lamda to compute first,second and third coefficients */
+    /* \todo use mu_and_lambda to compute first,second and third coefficients */
 
     int i;
     fvector_t localForce[8];
@@ -1091,12 +1094,13 @@ void constant_Q_addforce_simplifiedConvolution(mesh_t *myMesh, mysolver_t *mySol
         e_t    *ep;
         edata_t *edata;
 
-        double a0_shear, a1_shear, a2_shear,
-        a0_kappa, a1_kappa, a2_kappa,
-        g0_shear, g1_shear, g2_shear,
-        g0_kappa, g1_kappa, g2_kappa,
+        double a0_shear, a1_shear,
+        a0_kappa, a1_kappa,
+        g0_shear, g1_shear,
+        g0_kappa, g1_kappa,
         b_shear, b_kappa,
         phi_shear, psi_shear, phi_kappa, psi_kappa;
+        // double a2_shear, a2_kappa, g2_shear, g2_kappa;
 
         eindex = myLinearElementsMapper[lin_eindex];
         elemp = &myMesh->elemTable[eindex];
@@ -1105,21 +1109,21 @@ void constant_Q_addforce_simplifiedConvolution(mesh_t *myMesh, mysolver_t *mySol
 
         a0_shear = edata->a0_shear;
         a1_shear = edata->a1_shear;
-        a2_shear = edata->a2_shear;
+        // a2_shear = edata->a2_shear;
         b_shear  = edata->b_shear;
 
         g0_shear = edata->g0_shear;
         g1_shear = edata->g1_shear;
-        g2_shear = edata->g2_shear;
+        // g2_shear = edata->g2_shear;
 
         a0_kappa   = edata->a0_kappa;
         a1_kappa   = edata->a1_kappa;
-        a2_kappa   = edata->a2_kappa;
+        // a2_kappa   = edata->a2_kappa;
         b_kappa    = edata->b_kappa;
 
         g0_kappa   = edata->g0_kappa;
         g1_kappa   = edata->g1_kappa;
-        g2_kappa   = edata->g2_kappa;
+        // g2_kappa   = edata->g2_kappa;
 
 
         phi_shear = dt/2.0 * ( a0_shear * g0_shear * ( 1 - g0_shear * dt ) + a1_shear * g1_shear * ( 1 - g1_shear * dt ) );
@@ -1134,9 +1138,10 @@ void constant_Q_addforce_simplifiedConvolution(mesh_t *myMesh, mysolver_t *mySol
         for (i = 0; i < 8; i++) {
 
             fvector_t *tm1Disp, *tm2Disp;
-            int32_t    lnid, cindex;
+            int32_t    lnid;
+            // int32_t    cindex;
 
-            cindex = eindex * 8 + i;
+            // cindex = eindex * 8 + i;
             lnid = elemp->lnid[i];
 
             tm1Disp = mySolver->tm1 + lnid;

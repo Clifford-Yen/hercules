@@ -38,14 +38,17 @@
 
 /**
  * Macros with the format string for int64_t and uint64_t types.
+ * Note that the same macros are defined in ocutil.h. To avoid warnings
+ * raised during compilation, we check if the macros are already defined 
+ * before defining them.
  */
-#if (defined __WORDSIZE) && (__WORDSIZE == 64)
-#  define UINT64_FMT		"lu"
-#  define INT64_FMT		"ld"
-#  define MPI_INT64		MPI_LONG
-#else /*  __WORDSIZE && __WORDSIZE == 64 */
+#ifndef UINT64_FMT
 #  define UINT64_FMT		"llu"
+#endif
+#ifndef INT64_FMT
 #  define INT64_FMT		"lld"
+#endif
+#ifndef MPI_INT64
 #  define MPI_INT64		MPI_LONG_LONG_INT
 #endif
 

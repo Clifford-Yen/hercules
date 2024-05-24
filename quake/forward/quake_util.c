@@ -138,10 +138,11 @@ int Search_Quality_Table(double Q, double *theQTABLE, int QTable_Size)
 
 	if (Q <= 475) {
 
-		int i, range;
+		int i;
+        // int range;
 		double diff, min;
 
-		range = Q / 5.;
+		// range = Q / 5.;
 		min = 1000.;
 
 		for(i = 0; i < QTable_Size; i++)

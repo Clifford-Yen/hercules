@@ -21,7 +21,7 @@
 
 extern int planes_print(int32_t myID, int IO_pool_pe_count, int theNumberOfPlanes, 
 			mysolver_t* mySolver);
-extern void planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *thePlaneDirOut, 
+extern void planes_setup(int32_t myID, int32_t *thePlanePrintRate, char *thePlaneDirOut, 
     int IO_pool_pe_count, int theNumberOfPlanes, const char *numericalin, 
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
     double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file);

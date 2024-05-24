@@ -218,13 +218,14 @@ void saveMeshCoordinatesForMatlab(mesh_t *myMesh, int32_t myID, const char *para
 					if (theTypeOfDamping == RAYLEIGH && 0) {
 
 						int32_t   n_0;
-						double    x_m,y_m,z_m;
+						// double    x_m,y_m;
+						double    z_m;
 						float     zeta =-1;
 
 						n_0 = myMesh->elemTable[i].lnid[0];
 						z_m = zoriginm + (ticksize)*myMesh->nodeTable[n_0].z;
-						x_m = xoriginm + (ticksize)*myMesh->nodeTable[n_0].x;
-						y_m = yoriginm + (ticksize)*myMesh->nodeTable[n_0].y;
+						// x_m = xoriginm + (ticksize)*myMesh->nodeTable[n_0].x;
+						// y_m = yoriginm + (ticksize)*myMesh->nodeTable[n_0].y;
 
 						/* Shift the domain if buildings are considered */
 						if ( includeBuildings == YES ) {

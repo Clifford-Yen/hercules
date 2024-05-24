@@ -409,7 +409,7 @@ int32_t drm_read_coords ( ) {
 void  search_drm_elems(mesh_t  *myMesh, int32_t key) {
 
 	int32_t   i, n_0, n_7, elementcounter = 0;
-	edata_t   *edata_temp;
+	// edata_t   *edata_temp;
 
 	/* Loop each element to find drm nodes.
 	 */
@@ -418,7 +418,7 @@ void  search_drm_elems(mesh_t  *myMesh, int32_t key) {
 		int    keys_array[5];
 		double coords_array[6];
 
-		edata_temp = (myMesh)->elemTable[i].data;
+		// edata_temp = (myMesh)->elemTable[i].data;
 		/* n_0 and n_7 are local nodal id's of 0th and 7th node.
 		 * Coordinates of 7th node are always bigger than 0th node.
 		 * */
@@ -2254,7 +2254,7 @@ void rearrange_drm_files ( mesh_t  *myMesh, int32_t theGroupSize, int32_t myID )
 int32_t	 fill_drm_struct( mesh_t  *myMesh, int32_t i, int32_t key, int *bound, int *exterior )
 {
 	int32_t   j, bound_cnt, exterior_cnt;
-	int64_t   elem_id, node_id;
+	// int64_t   elem_id, node_id;
 
 	if ( key==1 ) {
 		bound_cnt     = 4;
@@ -2286,11 +2286,11 @@ int32_t	 fill_drm_struct( mesh_t  *myMesh, int32_t i, int32_t key, int *bound, i
 	theDrmElem[i].boundarynodescount = bound_cnt;
 	theDrmElem[i].exteriornodescount = exterior_cnt;
 
-	elem_id = theDrmElem[i].leid;
-	for ( j = 0; j < 8 ;++j ) {
-		/*local id of the node */
-		node_id = myMesh->elemTable[elem_id].lnid[j];
-	}
+	// elem_id = theDrmElem[i].leid;
+	// for ( j = 0; j < 8 ;++j ) {
+	// 	/*local id of the node */
+	// 	node_id = myMesh->elemTable[elem_id].lnid[j];
+	// }
 	return i+1;
 }
 
@@ -2473,16 +2473,16 @@ void solver_compute_effective_drm_force( mysolver_t* mySolver , mesh_t* myMesh,
 		int32_t    lin_eindex;
 		int32_t    ln_drm_id_e, ln_drm_id_b;
 
-		int        remainder,aux;
-		double 	   fracture;
+		// int        remainder, aux;
+		// double 	   fracture;
 		fvector_t  localForce[8];
 		fvector_t* toForce ;
 
 		/* For Interpolation */
 
-		aux = (int)(theDrmPrintRate*thePart1DeltaT/deltat);
-		remainder = step % aux;
-		fracture = (double)remainder/(double)aux;
+		// aux = (int)(theDrmPrintRate*thePart1DeltaT/deltat);
+		// remainder = step % aux;
+		// fracture = (double)remainder/(double)aux;
 
 		//printf("%f ", fracture);
 		/* loop on the number of drm elements */
@@ -2606,8 +2606,8 @@ void solver_compute_effective_drm_force_v2( mysolver_t* mySolver , mesh_t* myMes
         int32_t    lin_eindex, cindex;
         int32_t    ln_drm_id_e, ln_drm_id_b;
 
-        int        remainder,aux;
-        double     fracture;
+        // int        remainder, aux;
+        // double     fracture;
         fvector_t  localForce[8];
         fvector_t* toForce ;
 
@@ -2616,9 +2616,9 @@ void solver_compute_effective_drm_force_v2( mysolver_t* mySolver , mesh_t* myMes
 
         /* For Interpolation */
 
-        aux = (int)(theDrmPrintRate*thePart1DeltaT/deltat);
-        remainder = step % aux;
-        fracture = (double)remainder/(double)aux;
+        // aux = (int)(theDrmPrintRate*thePart1DeltaT/deltat);
+        // remainder = step % aux;
+        // fracture = (double)remainder/(double)aux;
 
         //printf("%f ", fracture);
         /* loop on the number of drm elements */

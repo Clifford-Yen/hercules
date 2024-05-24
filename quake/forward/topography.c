@@ -230,8 +230,8 @@ void get_tetraProps(int32_t eindex, double tetrVols[5], int *topoPart ) {
 noyesflag_t isTopoElement (mesh_t *myMesh, int32_t eindex, int32_t topoNonlin_flag) {
 
     int32_t topo_eindex;
-    elem_t  *elemp;
-    edata_t *edata;
+    // elem_t  *elemp;
+    // edata_t *edata;
 
     /* return NO if topography is not considered */
     if ( thebase_zcoord == 0 )
@@ -240,8 +240,8 @@ noyesflag_t isTopoElement (mesh_t *myMesh, int32_t eindex, int32_t topoNonlin_fl
     /* if ( theTopoMethod == FEM )
         return NO; */
 
-    elemp = &myMesh->elemTable[eindex];
-    edata = (edata_t *)elemp->data;
+    // elemp = &myMesh->elemTable[eindex];
+    // edata = (edata_t *)elemp->data;
 
     for ( topo_eindex = 0; topo_eindex < myTopoElementsCount; topo_eindex++ ) {
 
@@ -546,12 +546,15 @@ double point_PlaneDist ( double xp, double yp, double zp )
 {
 
     int i, j;
-    double x_o, y_o, remi, remj, mesh_cz[4]= { 0 }, dist;
+    double x_o, y_o, mesh_cz[4]= { 0 }, dist;
+    // double remi, remj;
 
     zp = thebase_zcoord - zp; /* sea level elevation  */
 
-	remi = modf (xp  / So, &x_o );
-	remj = modf (yp  / So, &y_o );
+	// remi = modf (xp  / So, &x_o );
+	// remj = modf (yp  / So, &y_o );
+	modf (xp  / So, &x_o );
+	modf (yp  / So, &y_o );
 
 	i = x_o;
 	j = y_o;
@@ -693,9 +696,9 @@ void topo_searchII ( octant_t *leaf, double ticksize, edata_t *edata, int *to_to
                     far_air_flag = 1;
                 } else if ( ( dist > 0 ) && ( dist <= fact_air * emin ) && near_air_flag == 0 ) {
                     near_air_flag = 1;
-                } else if ( ( dist <= 0 ) && ( abs(dist) <= fact_mat * emin ) && near_mat_flag == 0 ) {
+                } else if ( ( dist <= 0 ) && ( fabs(dist) <= fact_mat * emin ) && near_mat_flag == 0 ) {
                     near_mat_flag = 1;
-                } else if ( ( dist < 0 ) && ( abs(dist) > fact_mat * emin ) && far_mat_flag == 0 ) {
+                } else if ( ( dist < 0 ) && ( fabs(dist) > fact_mat * emin ) && far_mat_flag == 0 ) {
                     far_mat_flag = 1;
                 }
             } /* for every k */
@@ -786,10 +789,11 @@ void TetraHVol ( double xo, double yo, double zo, double esize, double VolTetr[5
         }
     }
 
-    double x21, x31, x41;
-    double y21, y31, y41;
-    double z21, z31, z41;
-    double Vpr, Vo;
+    // double x21, x31, x41;
+    // double y21, y31, y41;
+    // double z21, z31, z41;
+    double Vpr;
+    // double Vo;
 
     //double r, s, t;     /* natural coordinates of the tetrahedron with sides = 2   */
     double eta,psi,gam; /* natural coordinates of the tetrahedron with sides = 1  */
@@ -797,20 +801,20 @@ void TetraHVol ( double xo, double yo, double zo, double esize, double VolTetr[5
 
     for ( m = 0; m < 5; ++m ) {
 
-        x21 = MCx[m][1] - MCx[m][0];
-        x31 = MCx[m][2] - MCx[m][0];
-        x41 = MCx[m][3] - MCx[m][0];
+        // x21 = MCx[m][1] - MCx[m][0];
+        // x31 = MCx[m][2] - MCx[m][0];
+        // x41 = MCx[m][3] - MCx[m][0];
 
-        y21 = MCy[m][1] - MCy[m][0];
-        y31 = MCy[m][2] - MCy[m][0];
-        y41 = MCy[m][3] - MCy[m][0];
+        // y21 = MCy[m][1] - MCy[m][0];
+        // y31 = MCy[m][2] - MCy[m][0];
+        // y41 = MCy[m][3] - MCy[m][0];
 
-        z21 = MCz[m][1] - MCz[m][0];
-        z31 = MCz[m][2] - MCz[m][0];
-        z41 = MCz[m][3] - MCz[m][0];
+        // z21 = MCz[m][1] - MCz[m][0];
+        // z31 = MCz[m][2] - MCz[m][0];
+        // z41 = MCz[m][3] - MCz[m][0];
 
-        Vo =   x31 * y21 * z41 + x41 * y31 * z21 + z31 * x21 * y41
-           - ( x31 * y41 * z21 + y31 * x21 * z41 + z31 * x41 * y21 );
+        // Vo =   x31 * y21 * z41 + x41 * y31 * z21 + z31 * x21 * y41
+        //    - ( x31 * y41 * z21 + y31 * x21 * z41 + z31 * x41 * y21 );
 
         Vpr = 0.0;
 
@@ -886,10 +890,11 @@ void TetraHVol_2 ( double xo, double yo, double zo, double esize,
         }
     }
 
-    double x21, x31, x41;
-    double y21, y31, y41;
-    double z21, z31, z41;
-    double Vpr, Vo;
+    // double x21, x31, x41;
+    // double y21, y31, y41;
+    // double z21, z31, z41;
+    double Vpr;
+    // double Vo;
 
     //double r, s, t;     /* natural coordinates of the tetrahedron with sides = 2   */
     double eta,psi,gam; /* natural coordinates of the tetrahedron with sides = 1  */
@@ -898,20 +903,20 @@ void TetraHVol_2 ( double xo, double yo, double zo, double esize,
     // get volumes for the first partition
     for ( m = 0; m < 5; ++m ) {
 
-        x21 = MCx[m][1] - MCx[m][0];
-        x31 = MCx[m][2] - MCx[m][0];
-        x41 = MCx[m][3] - MCx[m][0];
+        // x21 = MCx[m][1] - MCx[m][0];
+        // x31 = MCx[m][2] - MCx[m][0];
+        // x41 = MCx[m][3] - MCx[m][0];
 
-        y21 = MCy[m][1] - MCy[m][0];
-        y31 = MCy[m][2] - MCy[m][0];
-        y41 = MCy[m][3] - MCy[m][0];
+        // y21 = MCy[m][1] - MCy[m][0];
+        // y31 = MCy[m][2] - MCy[m][0];
+        // y41 = MCy[m][3] - MCy[m][0];
 
-        z21 = MCz[m][1] - MCz[m][0];
-        z31 = MCz[m][2] - MCz[m][0];
-        z41 = MCz[m][3] - MCz[m][0];
+        // z21 = MCz[m][1] - MCz[m][0];
+        // z31 = MCz[m][2] - MCz[m][0];
+        // z41 = MCz[m][3] - MCz[m][0];
 
-        Vo =   x31 * y21 * z41 + x41 * y31 * z21 + z31 * x21 * y41
-           - ( x31 * y41 * z21 + y31 * x21 * z41 + z31 * x41 * y21 );
+        // Vo =   x31 * y21 * z41 + x41 * y31 * z21 + z31 * x21 * y41
+        //    - ( x31 * y41 * z21 + y31 * x21 * z41 + z31 * x41 * y21 );
 
         Vpr = 0.0;
 
@@ -957,20 +962,20 @@ void TetraHVol_2 ( double xo, double yo, double zo, double esize,
 /* =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= */
     for ( m = 0; m < 5; ++m ) {
 
-        x21 = MCx2[m][1] - MCx2[m][0];
-        x31 = MCx2[m][2] - MCx2[m][0];
-        x41 = MCx2[m][3] - MCx2[m][0];
+        // x21 = MCx2[m][1] - MCx2[m][0];
+        // x31 = MCx2[m][2] - MCx2[m][0];
+        // x41 = MCx2[m][3] - MCx2[m][0];
 
-        y21 = MCy2[m][1] - MCy2[m][0];
-        y31 = MCy2[m][2] - MCy2[m][0];
-        y41 = MCy2[m][3] - MCy2[m][0];
+        // y21 = MCy2[m][1] - MCy2[m][0];
+        // y31 = MCy2[m][2] - MCy2[m][0];
+        // y41 = MCy2[m][3] - MCy2[m][0];
 
-        z21 = MCz2[m][1] - MCz2[m][0];
-        z31 = MCz2[m][2] - MCz2[m][0];
-        z41 = MCz2[m][3] - MCz2[m][0];
+        // z21 = MCz2[m][1] - MCz2[m][0];
+        // z31 = MCz2[m][2] - MCz2[m][0];
+        // z41 = MCz2[m][3] - MCz2[m][0];
 
-        Vo =   x31 * y21 * z41 + x41 * y31 * z21 + z31 * x21 * y41
-           - ( x31 * y41 * z21 + y31 * x21 * z41 + z31 * x41 * y21 );
+        // Vo =   x31 * y21 * z41 + x41 * y31 * z21 + z31 * x21 * y41
+        //    - ( x31 * y41 * z21 + y31 * x21 * z41 + z31 * x41 * y21 );
 
         Vpr = 0.0;
 
@@ -1638,7 +1643,8 @@ void topography_elements_count(int32_t myID, mesh_t *myMesh ) {
         elem_t     *elemp;
         edata_t    *edata;
         node_t     *node0dat;
-        double      Vp, xo, yo, zo, esize, Vol;
+        double      Vp, xo, yo, zo, esize;
+        // double      Vol;
         double      aux_vol[5] = { 0 };
         int32_t     node0, aux_int=0;
 
@@ -1657,7 +1663,7 @@ void topography_elements_count(int32_t myID, mesh_t *myMesh ) {
 
         /* get element size */
         esize = edata->edgesize;
-        Vol   = esize * esize *esize;
+        // Vol   = esize * esize *esize;
 
         if ( ( Vp != -1 ) && ( topo_crossings ( xo, yo, zo, esize ) == 1 )  && (
                 ( xo != 0.0 ) &&
@@ -1705,7 +1711,8 @@ void topography_elements_mapping(int32_t myID, mesh_t *myMesh) {
         elem_t     *elemp;
         edata_t    *edata;
         node_t     *node0dat;
-        double      Vp, xo, yo, zo, esize, Vol;
+        double      Vp, xo, yo, zo, esize;
+        // double      Vol;
         int32_t     node0;
 
         elemp    = &myMesh->elemTable[eindex]; //Takes the information of the "eindex" element
@@ -1724,7 +1731,7 @@ void topography_elements_mapping(int32_t myID, mesh_t *myMesh) {
 
         /* get element size */
         esize = edata->edgesize;
-        Vol   = esize * esize *esize;
+        // Vol   = esize * esize *esize;
 
         if ( ( Vp != -1 ) && ( topo_crossings ( xo, yo, zo, esize ) == 1 ) && (
                  ( xo != 0.0 ) &&
@@ -1850,7 +1857,7 @@ void compute_addforce_topoEffective ( mesh_t     *myMesh,
 
             elem_t      *elemp;
             edata_t     *edata;
-            node_t      *node0dat;
+            // node_t      *node0dat;
             e_t         *ep;
 
             eindex = myTopoElementsMapping[topo_eindex];
@@ -1860,7 +1867,7 @@ void compute_addforce_topoEffective ( mesh_t     *myMesh,
             elemp                   = &myMesh->elemTable[eindex];
             edata                   = (edata_t *)elemp->data;
             topoconstants_t topo_ec = myTopoSolver->topoconstants[topo_eindex];
-            node0dat                = &myMesh->nodeTable[elemp->lnid[0]];
+            // node0dat                = &myMesh->nodeTable[elemp->lnid[0]];
             ep                      = &mySolver->eTable[eindex];
 
             if ( ( topo_ec.isTopoNonlin == 0 || theNonlinTopo_flag == NO ) && edata->topoBkt == 0 ) {
@@ -2583,7 +2590,7 @@ void topography_stations_init( mesh_t    *myMesh,
     int32_t     lnid0;
     elem_t     *elemp;
 
-    int topoStations_count = 0;
+    // int topoStations_count = 0;
 
     if ( ( myNumberOfStations == 0   ) ||
          ( theTopoMethod      == FEM ) )
@@ -2642,7 +2649,7 @@ void topography_stations_init( mesh_t    *myMesh,
                 }
 
                 myTopoStations[iStation].TopoStation  = 1; /*  Station belongs to topography */
-                topoStations_count += 1;
+                // topoStations_count += 1;
 
                 /* zero node coordinates */
                 double xo = myMesh->nodeTable[lnid0].x * (myMesh->ticksize);
