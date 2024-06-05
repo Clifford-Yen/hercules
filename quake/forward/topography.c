@@ -467,75 +467,83 @@ double interp_z( double xp, double yp, double xo, double yo, double h, double zc
 /* returns the elevation value of a point with plane coordinates (xo,yo).
  * Elevation is measured with respect to Hercules' Z global axis  */
 double point_elevation ( double xo, double yo ) {
-
     int i, j;
     double xp, yp, x_o, y_o, remi, remj, mesh_cz[4] = { 0 }, zp;
-
-        if (thebase_zcoord == 0.0){
-            zp = 0.0;
-        }
-        else {
-
-	xp = xo;
-	yp = yo;
-
-	remi = modf (xp  / So, &x_o );
-	remj = modf (yp  / So, &y_o );
-
-	i = x_o;
-	j = y_o;
-
-	if ( ( remi <= 0.000001 ) || ( remj <= 0.000001) ){
-                if ( ( remi <= 0.000001 ) && ( remj <= 0.000001) ){
-		     zp = ( thebase_zcoord - theTopoInfo [ np_ew * i + j ] );
-                }
-                else {
-                     if ( remi <= 0.000001 ){
-                          zp = ( thebase_zcoord - theTopoInfo [ np_ew * i + j ]*(1.0-remj) - theTopoInfo [ np_ew * i + j + 1]*remj );
-                     }
-                     if ( remj <= 0.000001 ){
-                          zp = ( thebase_zcoord - theTopoInfo [ np_ew * i + j ]*(1.0-remi) - theTopoInfo [ np_ew * (i+1) + j]*remi );
-                     }
-                }
-        }
-        else {
-                // NOTE: the following if statement is a sanity check. It should never be true.
-                if ( (ntp -1) < (np_ew * ( i + 1 ) + j + 1) ){
-                    printf("np_ew=%d\n", np_ew); 
-                    printf("i=%d\n", i);
-                    printf("j=%d\n", j);
-                    printf("ntp=%d\n", ntp);
-                    printf("np_ew * ( i + 1 ) + j + 1)=%d\n", np_ew * ( i + 1 ) + j + 1);
-                    printf("x_o=%f\n", x_o);
-                    printf("y_o=%f\n", y_o);
-                    printf("xp=%f\n", xp);
-                    printf("yp=%f\n", yp);
-                    printf("remi=%f\n", remi);
-                    printf("remj=%f\n", remj);
-                    printf("So=%f\n", So);
-                }                  
-                mesh_cz[0] =  theTopoInfo [ min(ntp-1,np_ew * i + j) ];
-                mesh_cz[1] =  theTopoInfo [ min(ntp-1,np_ew * i + j + 1) ];
-                mesh_cz[2] =  theTopoInfo [ min(ntp-1,np_ew * ( i + 1 ) + j + 1) ];
-                mesh_cz[3] =  theTopoInfo [ min(ntp-1,np_ew * ( i + 1 ) + j) ];
-
-        /*  Sanity check   */
-        if ( (mesh_cz[0] == NAN) || (mesh_cz[1] == NAN) || (mesh_cz[2] == NAN) || (mesh_cz[3] == NAN) ) {
-
-            fprintf(stderr,"Thread 1: Topography module point_elevation fnc: "
-                    "NAN found when computing point elevation\n");
-            MPI_Abort(MPI_COMM_WORLD, ERROR);
-            exit(1);
-        }
-
-        zp = thebase_zcoord - interp_z( xp, yp, x_o*So, y_o*So, So, mesh_cz );
+    if (thebase_zcoord == 0.0) {
+        zp = 0.0;
     }
+    else {
+        xp = xo;
+        yp = yo;
 
+        remi = modf(xp  / So, &x_o );
+        remj = modf(yp  / So, &y_o );
+
+        /* Clifford's NOTE: As noted in setrec() function in psolve.c, some query 
+        points may be outside of the domain, which makes negative values of x_o 
+        and y_o possible. These negative values may lead to negative indices for
+        theTopoInfo array. To avoid this, we set i and j to 0 if x_o and y_o are
+        negative. Also, we set i and j to np_ns - 2 and np_ew - 2, respectively,
+        if x_o and y_o are greater than or equal to np_ns - 1 and np_ew - 1 so
+        that the indices are within the bounds of theTopoInfo array 
+        (np_ew * (i + 1) + j + 1 will always be less than ntp). */
+        if (x_o < 0) {
+            i = 0;
+        } else if (x_o >= np_ns - 1) {
+            i = np_ns - 2;
+        } else {
+            i = x_o;
+        }
+        if (y_o < 0) {
+            j = 0;
+        } else if (y_o >= np_ew - 1) {
+            j = np_ew - 2;
+        } else {
+            j = y_o;
+        }
+
+        if ((remi <= 0.000001) && (remj <= 0.000001)) {
+            zp = (thebase_zcoord - theTopoInfo[np_ew * i + j]);
+        }
+        else if (remi <= 0.000001) {
+            zp = (thebase_zcoord - theTopoInfo[np_ew * i + j] * (1.0 - remj) - theTopoInfo[np_ew * i + j + 1] * remj);
+        } else if (remj <= 0.000001) {
+            zp = (thebase_zcoord - theTopoInfo[np_ew * i + j] * (1.0 - remi) - theTopoInfo[np_ew * (i + 1) + j] * remi);
+        } else {
+            // NOTE: the following if statement is a sanity check. It should never be true.
+            if ( (ntp -1) < (np_ew * ( i + 1 ) + j + 1) ){
+                printf("np_ew=%d\n", np_ew);
+                printf("i=%d\n", i);
+                printf("j=%d\n", j);
+                printf("ntp=%d\n", ntp);
+                printf("np_ew * ( i + 1 ) + j + 1)=%d\n", np_ew * ( i + 1 ) + j + 1);
+                printf("x_o=%f\n", x_o);
+                printf("y_o=%f\n", y_o);
+                printf("xp=%f\n", xp);
+                printf("yp=%f\n", yp);
+                printf("remi=%f\n", remi);
+                printf("remj=%f\n", remj);
+                printf("So=%f\n", So);
+            }
+
+            mesh_cz[0] = theTopoInfo[np_ew * i + j];
+            mesh_cz[1] = theTopoInfo[np_ew * i + j + 1];
+            mesh_cz[2] = theTopoInfo[np_ew * (i + 1) + j + 1];
+            mesh_cz[3] = theTopoInfo[np_ew * (i + 1) + j];
+
+            /*  Sanity check   */
+            if ( (mesh_cz[0] == NAN) || (mesh_cz[1] == NAN) || (mesh_cz[2] == NAN) || (mesh_cz[3] == NAN) ) {
+                fprintf(stderr, "Thread 1: Topography module point_elevation fnc: "
+                    "NAN found when computing point elevation\n");
+                MPI_Abort(MPI_COMM_WORLD, ERROR);
+                exit(1);
+            }
+
+            zp = thebase_zcoord - interp_z(xp, yp, x_o*So, y_o*So, So, mesh_cz);
+        }
     }
     return zp;
-
 }
-
 
 /* returns the distance of a point to the surface topography */
 /* cases: positive distance = point outside topography.
@@ -556,9 +564,21 @@ double point_PlaneDist ( double xp, double yp, double zp )
 	modf (xp  / So, &x_o );
 	modf (yp  / So, &y_o );
 
-	i = x_o;
-	j = y_o;
-
+    /* Clifford's NOTE: see note in point_elevation() function */
+    if (x_o < 0) {
+        i = 0;
+    } else if (x_o > np_ns - 1) {
+        i = np_ns - 1;
+    } else {
+        i = x_o;
+    }
+    if (y_o < 0) {
+        j = 0;
+    } else if (y_o > np_ew - 1) {
+        j = np_ew - 1;
+    } else {
+        j = y_o;
+    }
 
     if ( (i == 0) || (j == 0) || (i == np_ns - 1 ) || (j == np_ew - 1) ) {
 
@@ -566,10 +586,10 @@ double point_PlaneDist ( double xp, double yp, double zp )
         return dist;
     }
 
-    mesh_cz[0] =  theTopoInfo [ min(ntp-1,np_ew * i + j) ];
-    mesh_cz[1] =  theTopoInfo [ min(ntp-1,np_ew * i + j + 1) ];
-    mesh_cz[2] =  theTopoInfo [ min(ntp-1,np_ew * ( i + 1 ) + j + 1) ];
-    mesh_cz[3] =  theTopoInfo [ min(ntp-1,np_ew * ( i + 1 ) + j) ];
+    mesh_cz[0] =  theTopoInfo [ np_ew * i + j ];
+    mesh_cz[1] =  theTopoInfo [ np_ew * i + j + 1 ];
+    mesh_cz[2] =  theTopoInfo [ np_ew * ( i + 1 ) + j + 1 ];
+    mesh_cz[3] =  theTopoInfo [ np_ew * ( i + 1 ) + j ];
     dist = point_to_plane( xp, yp, zp, x_o*So, y_o*So, So, mesh_cz );
 
     return dist;

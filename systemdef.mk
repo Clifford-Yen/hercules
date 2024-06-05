@@ -12,7 +12,7 @@
 #	CFLAGS = -O2
 #
 # * For an even more optimized executable:
-	CFLAGS = -Ofast
+	CFLAGS = -O3
 #
 # check other platform specific flags below.
 #
@@ -41,6 +41,7 @@ ifeq ($(SYSTEM), Frontera)
         CXX     = mpicxx
         LD	= mpicxx
         CFLAGS  += -DBIGBEN
+# CFLAGS  += -xCORE-AVX512 -fast
 # CC  += -I/opt/apps/intel19/gsl/2.6/include/
 # LDFLAGS += -L/opt/apps/intel19/gsl/2.6/lib/
 # NOTE: The special envrionment variables TACC_GSL_INC and TACC_GSL_LIB 

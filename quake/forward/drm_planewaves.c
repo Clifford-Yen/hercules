@@ -1664,6 +1664,10 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     if (z_input < Params_soil.minPointZ) {
         return -1;
     }
+    /* Clifford's NOTE: Using the commented out code below, we can replicate how 
+    Istanbul model works. But whether an allowable z range should be introduced 
+    is something to be discussed. */
+    // if (!(x_input >= xmin && x_input <= xmax && y_input >= ymin && y_input <= ymax && z_input <= 300.0)) {
     if (!(x_input >= xmin && x_input <= xmax && y_input >= ymin && y_input <= ymax)) {
         return -1;
     }
@@ -1686,7 +1690,13 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     y_coord[2] = y_coord[0] + y_spacing;
     y_coord[3] = y_coord[2];
 
+    /* Clifford's NOTE: by printing the following, we would know whether the origin 
+    is correctly set to (0, 0). */
+    // printf("DRM_southwest_x: %lf, DRM_southwest_y: %lf\n", DRM_southwest_x, DRM_southwest_y);
+    // printf("x_coord[0]: %lf, y_coord[0]: %lf\n", x_coord[0], y_coord[0]);
+    // printf("x: %lf, y: %lf\n", x_coord[0] + DRM_southwest_x, y_coord[0] + DRM_southwest_y);
     z_elevation[0] = thebase_zcoord - point_elevation(x_coord[0] + DRM_southwest_x, y_coord[0] + DRM_southwest_y);
+    // printf("z_elevation[0]: %lf\n", z_elevation[0]);
     z_elevation[1] = thebase_zcoord - point_elevation(x_coord[1] + DRM_southwest_x, y_coord[1] + DRM_southwest_y);
     z_elevation[2] = thebase_zcoord - point_elevation(x_coord[2] + DRM_southwest_x, y_coord[2] + DRM_southwest_y);
     z_elevation[3] = thebase_zcoord - point_elevation(x_coord[3] + DRM_southwest_x, y_coord[3] + DRM_southwest_y);
@@ -1703,7 +1713,16 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
 
     for (i = 0; i < 4; i++) {
         row1 = Layer_start_ID[Rec_node_ID[i]];
-        numLayers = Layer_start_ID[Rec_node_ID[i]+1] - Layer_start_ID[Rec_node_ID[i]];
+        if (Rec_node_ID[i]+1 < Params_soil.numLayerID) {
+            numLayers = Layer_start_ID[Rec_node_ID[i]+1] - Layer_start_ID[Rec_node_ID[i]];
+        } else if (Rec_node_ID[i]+1 == Params_soil.numLayerID) {
+            numLayers = Params_soil.numData - Layer_start_ID[Rec_node_ID[i]];
+        } else { // Rec_node_ID[i]+1 > Params_soil.numLayerID, this should never happen
+            fprintf(stderr, "Error: Rec_node_ID[i]+1 > Params_soil.numLayerID\n"
+                "Rec_node_ID[%d] = %d, Params_soil.numLayerID = %d\n", i, Rec_node_ID[i], Params_soil.numLayerID);
+            MPI_Abort(MPI_COMM_WORLD, ERROR);
+            exit(1);
+        }
         for (k = numLayers-1; k >= 0; k--) {
             /* NOTE: z_input + zi_elevation can be treated as a reference point 
             (similar to thebase_zcoord). It then be shifted to one of the four
@@ -1830,12 +1849,12 @@ void general3DVelocityModel_init (int32_t myID, const char *the3DVelModelDir) {
         }
     }
 
-    int int_message[5];
+    int int_message[4];
     int_message[0] = Params_soil.numLayerID;
     int_message[1] = Params_soil.numPointX;
     int_message[2] = Params_soil.numPointY;
     int_message[3] = Params_soil.numData;
-    MPI_Bcast(int_message, 5, MPI_INT, 0, comm_solver);
+    MPI_Bcast(int_message, 4, MPI_INT, 0, comm_solver);
     Params_soil.numLayerID = int_message[0];
     Params_soil.numPointX = int_message[1];
     Params_soil.numPointY = int_message[2];
