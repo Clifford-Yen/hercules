@@ -168,7 +168,81 @@ vector3D_t compute_domain_coords( vector3D_t point, double azimuth )
     return pointTransformed;
 }
 
+// NOTE: For both approaches, the function take the same input arguments to 
+// maintain compatibility. As a result, some of the arguments are not going to 
+// be used in either case.
+#ifdef PROJ
 
+    UTMZone_t getUTMZone(double latitude, double longitude) {
+        UTMZone_t utmZone;
+        utmZone.zone = floor((longitude + 180) / 6) + 1;
+        utmZone.hemisphere = (latitude >= 0) ? 'N' : 'S';
+        // Save PROJ context and PJ for later use
+        PJ_CONTEXT *C;
+        PJ *P;
+        char projString[64]; // Buffer to hold the PROJ string
+        C = proj_context_create();
+        // Construct the PROJ string dynamically based on zone and hemisphere
+        snprintf(projString, sizeof(projString), "+proj=utm +zone=%d +%c +ellps=WGS84 +datum=WGS84 +units=m +no_defs", utmZone.zone, utmZone.hemisphere == 'N' ? 'n' : 's');
+        // Create a PJ for the transformation using the constructed PROJ string
+        P = proj_create(C, projString);
+        if (P == NULL) {
+            printf("Projection creation failed\n");
+            // Terminate the program
+            exit(1);
+        }
+        utmZone.P = P;
+        return utmZone;
+    }
+
+    // Function to convert latitude and longitude to UTM coordinates
+    UTMCoordinates_t convertLatLonToUTM(double latitude, double longitude, PJ *P) {
+        if (latitude < -80.0 || latitude > 84.0) {
+            printf("Error: Invalid latitude value. Latitude must be between -80 and 84 degrees.\n");
+            return (UTMCoordinates_t){-1, -1}; // Return error coordinates
+        }
+        PJ_COORD p;
+        // Assign latitude and longitude to the PJ_COORD
+        // NOTE: the third argument in proj_coord() is the elevation, while the fourth 
+        // argument is the time. Since we don't need them, we set them to 0.
+        p = proj_coord(proj_torad(longitude), proj_torad(latitude), 0, 0);
+        // Transform the coordinates
+        p = proj_trans(P, PJ_FWD, p);
+        // Return the transformed coordinates
+        return (UTMCoordinates_t){p.enu.e, p.enu.n};
+    }
+
+    void convertUTMToLatLon(UTMCoordinates_t utmCoordinates, PJ *P, double *latitude, double *longitude) {
+        PJ_COORD p;
+        p = proj_coord(utmCoordinates.e, utmCoordinates.n, 0, 0);
+        p = proj_trans(P, PJ_INV, p);
+        *longitude = proj_todeg(p.lp.lam);
+        *latitude = proj_todeg(p.lp.phi);
+    }
+
+    /**
+     * Computes the domain coordinates of a point based on UTM projection.
+     */
+    vector3D_t compute_domain_coords_linearinterp(double lon, double lat,
+        double* longcorner, double* latcorner, 
+        double domainlengthetha, double domainlengthcsi, 
+        UTMZone_t* utmZone)
+    {
+        // NOTE: longcorner, latcorner, domainlengthetha, domainlengthcsi are not used in this implementation
+        vector3D_t domainCoords;
+        // NOTE: utmZone->refPoint is the origin in UTM coordinates
+        UTMCoordinates_t utmCoordinates = convertLatLonToUTM(lat, lon, utmZone->P);
+        if ( (utmZone->refPoint.e == -1 && utmZone->refPoint.n == -1) || (utmCoordinates.e == -1 && utmCoordinates.n == -1) ) {
+            printf("Conversion from latitude/longitude to UTM failed\n");
+            return (vector3D_t){-1, -1, -1}; // Return error coordinates
+        }
+        domainCoords.x[0] = utmCoordinates.n - utmZone->refPoint.n;
+        domainCoords.x[1] = utmCoordinates.e - utmZone->refPoint.e;
+        domainCoords.x[2] = 0;
+        return domainCoords;
+    }
+
+#else
 
 /**
  * Computes the domain coordinates of a point based on corners of the global
@@ -176,11 +250,11 @@ vector3D_t compute_domain_coords( vector3D_t point, double azimuth )
  */
 vector3D_t
 compute_domain_coords_linearinterp( double  lon , double lat,
-				    double* longcorner,
-				    double* latcorner,
-				    double  domainlengthetha,
-				    double  domainlengthcsi )
+    double* longcorner, double* latcorner,
+    double  domainlengthetha, double  domainlengthcsi,
+    UTMZone_t* utmZone)
 {
+    // NOTE: utmZone is not used in this implementation
     int i;
     double Ax,Ay,Bx,By,Cx,Cy,Dx,Dy;
     double res;
@@ -242,3 +316,5 @@ compute_domain_coords_linearinterp( double  lon , double lat,
 
     return domainCoords;
 }
+
+#endif

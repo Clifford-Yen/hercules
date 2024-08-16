@@ -261,7 +261,7 @@ void delete_files(const char *path) {
 
 static int read_planewithkinks (FILE *fp);
 
-static void compute_point_source_strike (ptsrc_t* ps);
+static void compute_point_source_strike(ptsrc_t* ps, UTMZone_t* utmZone);
 
 int
 source_get_local_loaded_nodes_count()
@@ -1316,7 +1316,7 @@ static void update_point_source (ptsrc_t *pointSource,
 }
 
 static void
-compute_point_source_strike_srfh (ptsrc_t* ps, int32_t iSrc)
+compute_point_source_strike_srfh (ptsrc_t* ps, int32_t iSrc, UTMZone_t* utmZone)
 {
 
   vector3D_t pivot, pointInNorth, unitVec;
@@ -1329,19 +1329,15 @@ compute_point_source_strike_srfh (ptsrc_t* ps, int32_t iSrc)
 
   if( theLonlatOrCartesian == 0 ){
 
-    pivot = compute_domain_coords_linearinterp(theSourceLonArray[iSrc],
-					       theSourceLatArray[iSrc],
-					       theSurfaceCornersLong ,
-		 			       theSurfaceCornersLat,
-					       theRegionLengthEastM,
-					       theRegionLengthNorthM );
+    pivot = compute_domain_coords_linearinterp(
+        theSourceLonArray[iSrc], theSourceLatArray[iSrc],
+        theSurfaceCornersLong, theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 
-    pointInNorth = compute_domain_coords_linearinterp(theSourceLonArray[iSrc],
-						      theSourceLatArray[iSrc]+.1,
-						      theSurfaceCornersLong ,
-						      theSurfaceCornersLat,
-						      theRegionLengthEastM,
-						      theRegionLengthNorthM );
+    pointInNorth = compute_domain_coords_linearinterp(
+        theSourceLonArray[iSrc], theSourceLatArray[iSrc]+.1,
+        theSurfaceCornersLong , theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 
 
     /* Compute Unit Vector */
@@ -1375,7 +1371,7 @@ compute_point_source_strike_srfh (ptsrc_t* ps, int32_t iSrc)
  *
  *
  */
-static void update_point_source_srfh (ptsrc_t *pointSource, int32_t isource){
+static void update_point_source_srfh (ptsrc_t *pointSource, int32_t isource, UTMZone_t* utmZone){
   int iTime;
 
   for(iTime=0; iTime < theNumberOfTimeSteps; iTime++)
@@ -1383,7 +1379,7 @@ static void update_point_source_srfh (ptsrc_t *pointSource, int32_t isource){
 
   pointSource->strike =  theSourceStrikeArray[isource];
 
-  compute_point_source_strike_srfh(pointSource,isource);
+  compute_point_source_strike_srfh(pointSource,isource,utmZone);
 
 
   pointSource->dip    =  theSourceDipArray[isource];
@@ -1411,7 +1407,7 @@ static void update_point_source_srfh (ptsrc_t *pointSource, int32_t isource){
  * init_planewithkinks_mapping:
  *
  */
-static int init_planewithkinks_mapping(){
+static int init_planewithkinks_mapping(UTMZone_t* utmZone){
 
   int iKink, iDir;
 
@@ -1444,12 +1440,10 @@ static int init_planewithkinks_mapping(){
   for ( iKink=0 ; iKink < theNumberOfKinks; iKink++ ){
 
     theKinksDomainCoord[iKink] =
-      compute_domain_coords_linearinterp(theKinkLonArray[iKink],
-       					 theKinkLatArray[iKink],
-					 theSurfaceCornersLong ,
-					 theSurfaceCornersLat,
-					 theRegionLengthEastM,
-					 theRegionLengthNorthM );
+      compute_domain_coords_linearinterp(
+        theKinkLonArray[iKink], theKinkLatArray[iKink],
+        theSurfaceCornersLong, theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 
   }
 
@@ -1887,7 +1881,6 @@ read_domain( FILE* fp )
     double length_east_m;
     double length_north_m;
     double depth_deep_m;
-    double auxiliar[8];
 
     if ((parsetext(fp, "region_origin_latitude_deg", 'd',
 		   &origin_latitude_deg) != 0) ||
@@ -1908,11 +1901,14 @@ read_domain( FILE* fp )
 	return -1;
     }
 
-    parsedarray(fp, "domain_surface_corners", 8, auxiliar);
-    for (int iCorner = 0; iCorner < 4; iCorner++) {
-        theSurfaceCornersLong[iCorner] = auxiliar[iCorner * 2];
-        theSurfaceCornersLat[iCorner] = auxiliar[iCorner * 2 + 1];
-    }
+    #ifndef PROJ
+        double auxiliar[8];
+        parsedarray(fp, "domain_surface_corners", 8, auxiliar);
+        for (int iCorner = 0; iCorner < 4; iCorner++) {
+            theSurfaceCornersLong[iCorner] = auxiliar[iCorner * 2];
+            theSurfaceCornersLat[iCorner] = auxiliar[iCorner * 2 + 1];
+        }
+    #endif
 
     /* assign to global variables */
     theRegionOriginLatDeg  = origin_latitude_deg;
@@ -2305,7 +2301,7 @@ read_planewithkinks (FILE *fp)
 static int
 read_srfh_source ( FILE *fp, FILE *fpcoords, FILE *fparea, FILE *fpstrike,
 		   FILE *fpdip, FILE *fprake, FILE *fpslip, FILE *fpslipfun,
-		   double globalDelayT, double surfaceShift )
+		   double globalDelayT, double surfaceShift, UTMZone_t* utmZone)
 {
   int32_t iSrc;
   int iTime;
@@ -2358,12 +2354,10 @@ read_srfh_source ( FILE *fp, FILE *fpcoords, FILE *fparea, FILE *fpstrike,
     /* Dorian: keeping the z coordinate unmodified  */
     if ( get_thebase_topo() != 0.0 ) {
 
-    	vector3D_t coords_aux = compute_domain_coords_linearinterp(theSourceLonArray[iSrc],
-    								     theSourceLatArray[iSrc],
-    								     theSurfaceCornersLong ,
-    								     theSurfaceCornersLat,
-    								     theRegionLengthEastM,
-    								     theRegionLengthNorthM );
+    	vector3D_t coords_aux = compute_domain_coords_linearinterp(
+            theSourceLonArray[iSrc], theSourceLatArray[iSrc],
+            theSurfaceCornersLong, theSurfaceCornersLat,
+            theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 
     	theSourceDepthArray[iSrc] += point_elevation ( coords_aux.x[0], coords_aux.x[1] );
     }
@@ -2637,7 +2631,7 @@ static void fill_myForces_cycle( int cycle )
  *
  */
 static int
-compute_myForces_planes( const char *physicsin )
+compute_myForces_planes(const char *physicsin, UTMZone_t* utmZone)
 {
   double *grdStrk, *grdDip;
   double minEdge, minEdgeAlongStrike, minEdgeDownDip, area;
@@ -2676,7 +2670,7 @@ compute_myForces_planes( const char *physicsin )
 
   /* Variables that all poinSources will share */
   if ( theTypeOfSource == PLANEWITHKINKS ){
-    init_planewithkinks_mapping();
+    init_planewithkinks_mapping(utmZone);
     theExtendedCellSizeAlongStrikeM=theTotalTraceLength/theExtendedColumns;
     pntSrc.dip = 90;  /* Fixed for strikeslip */
   } else{
@@ -3038,7 +3032,7 @@ compute_myForces_planes( const char *physicsin )
  * of a point source.
  */
 static void
-fill_point_source_coordinates (ptsrc_t* ps)
+fill_point_source_coordinates(ptsrc_t* ps, UTMZone_t* utmZone)
 {
     /* coordinates */
 
@@ -3073,13 +3067,10 @@ fill_point_source_coordinates (ptsrc_t* ps)
 		    theHypocenterLongDeg,theHypocenterLatDeg );
 	}
 
-	ps->domainCoords
-	    = compute_domain_coords_linearinterp( theHypocenterLongDeg,
-						  theHypocenterLatDeg,
-						  theSurfaceCornersLong ,
-						  theSurfaceCornersLat,
-						  theRegionLengthEastM,
-						  theRegionLengthNorthM );
+	ps->domainCoords = compute_domain_coords_linearinterp( 
+        theHypocenterLongDeg, theHypocenterLatDeg,
+        theSurfaceCornersLong, theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 
 
     /*    printf("\n %f %f",ps->domainCoords.x[0],ps->domainCoords.x[1]);
@@ -3104,7 +3095,7 @@ fill_point_source_coordinates (ptsrc_t* ps)
  * is computed considering the vector pointing towards north.
  */
 static void
-compute_point_source_strike( ptsrc_t* ps )
+compute_point_source_strike(ptsrc_t* ps, UTMZone_t* utmZone)
 {
 
   vector3D_t pivot, pointInNorth, unitVec;
@@ -3119,19 +3110,15 @@ compute_point_source_strike( ptsrc_t* ps )
 
     printf("\nin strike correction = %f %f", theHypocenterLongDeg,theHypocenterLatDeg);
 
-    pivot = compute_domain_coords_linearinterp(theHypocenterLongDeg,
-					       theHypocenterLatDeg,
-					       theSurfaceCornersLong ,
-		 			       theSurfaceCornersLat,
-					       theRegionLengthEastM,
-					       theRegionLengthNorthM );
+    pivot = compute_domain_coords_linearinterp(
+        theHypocenterLongDeg, theHypocenterLatDeg,
+        theSurfaceCornersLong, theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 
-    pointInNorth = compute_domain_coords_linearinterp(theHypocenterLongDeg,
-						      theHypocenterLatDeg+.1,
-						      theSurfaceCornersLong ,
-						      theSurfaceCornersLat ,
-						      theRegionLengthEastM,
-						      theRegionLengthNorthM );
+    pointInNorth = compute_domain_coords_linearinterp(
+        theHypocenterLongDeg, theHypocenterLatDeg+.1,
+        theSurfaceCornersLong, theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 
 
     /* Compute Unit Vector */
@@ -3163,7 +3150,7 @@ compute_point_source_strike( ptsrc_t* ps )
  * \return 1 OK, -1 on error.
  */
 static int
-compute_myForces_point( const char* physicsin )
+compute_myForces_point(const char* physicsin, UTMZone_t* utmZone)
 {
     int32_t   iForce;
     octant_t* octant;
@@ -3171,7 +3158,7 @@ compute_myForces_point( const char* physicsin )
 
     myNumberOfNodesLoaded = 0;
 
-    fill_point_source_coordinates( &pntSrc );
+    fill_point_source_coordinates(&pntSrc, utmZone);
 
     /* search for source in this processor */
     if ( search_point (pntSrc.domainCoords, &octant) != 1) {
@@ -3216,7 +3203,7 @@ compute_myForces_point( const char* physicsin )
 
     pntSrc.strike = theSourceStrikeDeg;
 
-    compute_point_source_strike( &pntSrc );
+    compute_point_source_strike(&pntSrc, utmZone);
 
     pntSrc.dip		      = theSourceDipDeg;
     pntSrc.rake		      = theSourceRakeDeg;
@@ -3297,7 +3284,7 @@ compute_myForces_point( const char* physicsin )
  *
  *                return -1 fail 1 ok
  */
-static int  compute_myForces_srfh(const char *physicsin){
+static int  compute_myForces_srfh(const char *physicsin, UTMZone_t* utmZone){
 
   int32_t iSrc,iForce=0;
   octant_t *octant;
@@ -3354,12 +3341,10 @@ static int  compute_myForces_srfh(const char *physicsin){
   /* Go through the fault */
   for ( iSrc = 0; iSrc <theNumberOfPointSources ; iSrc++){
 
-    pntSrc.domainCoords = compute_domain_coords_linearinterp(theSourceLonArray[iSrc],
-							     theSourceLatArray[iSrc],
-							     theSurfaceCornersLong ,
-							     theSurfaceCornersLat,
-							     theRegionLengthEastM,
-							     theRegionLengthNorthM );
+    pntSrc.domainCoords = compute_domain_coords_linearinterp(
+        theSourceLonArray[iSrc], theSourceLatArray[iSrc],
+        theSurfaceCornersLong, theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
     pntSrc.domainCoords.x[2]= theSourceDepthArray[iSrc];
 
     /* Check if this force is contained in this processor */
@@ -3432,18 +3417,15 @@ static int  compute_myForces_srfh(const char *physicsin){
   for ( iCycle = 0; iCycle < myNumberOfCycles; iCycle++){
       for ( iSrc = 0; iSrc < theNumberOfPointSources ; iSrc++){
 	  if( is_forceinprocessor( iSrc, is_force_in_processor ) == 1 ) {
-	pntSrc.domainCoords
-	    = compute_domain_coords_linearinterp(theSourceLonArray[iSrc],
-						 theSourceLatArray[iSrc],
-						 theSurfaceCornersLong ,
-						 theSurfaceCornersLat,
-						 theRegionLengthEastM,
-						 theRegionLengthNorthM );
+	pntSrc.domainCoords = compute_domain_coords_linearinterp(
+        theSourceLonArray[iSrc], theSourceLatArray[iSrc],
+        theSurfaceCornersLong, theSurfaceCornersLat,
+        theRegionLengthEastM, theRegionLengthNorthM, utmZone);
 	pntSrc.domainCoords.x[2]= theSourceDepthArray[iSrc];
 
 	if ( search_point( pntSrc.domainCoords, &octant ) == 1){
 
-	  update_point_source_srfh( &pntSrc,iSrc);
+	  update_point_source_srfh(&pntSrc,iSrc, utmZone);
 	  load_myForces_with_point_source(octant, &pntSrc,
 					  is_force_in_processor, iCycle, iSrc);
 
@@ -3894,7 +3876,7 @@ source_read_type( FILE* fpsrc )
  * \return 0 on success, -1 on error.
  */
 static int source_init_parameters(const char* physicsin, const char *source_directory_output,
-    double globalDelayT, double surfaceShift)
+    double globalDelayT, double surfaceShift, UTMZone_t* utmZone)
 {
     FILE* fparea, *fpstrike, *fpdip, *fprake, *fpslip, *fpcoords,
 	*fpslipfun;
@@ -3915,7 +3897,12 @@ static int source_init_parameters(const char* physicsin, const char *source_dire
 
     hu_config_get_string_req(fp, "source_directory", &src_dir_p, &src_dir_len);
     strcpy(theSourceOutputDir, source_directory_output);
-    /* Clifford's NOTE and TODO: If the source output directory exists, remove 
+    /* Update May 22, 2024: It's not because of the source output folder. Some 
+    settings (topo, 3D Velocity Model, with different damping types) would 
+    generate different results even if the folder is removed before running. 
+    Consider to reverse this "fix" or keep it since these files seem to be 
+    temporary files. */
+    /* Clifford's NOTE: If the source output directory exists, remove 
     all files named "force_process.*" and "sourcedescription.out" as they affect 
     the results of the simulation. The root cause is still being investigated. */
     snprintf(force_process_file, sizeof(force_process_file), "%s/force_process.*", theSourceOutputDir);
@@ -3990,7 +3977,7 @@ static int source_init_parameters(const char* physicsin, const char *source_dire
 
 	if (read_srfh_source( fpsrc, fpcoords, fparea, fpstrike, fpdip,
 			      fprake, fpslip, fpslipfun, globalDelayT,
-			      surfaceShift ) == -1) {
+			      surfaceShift, utmZone ) == -1) {
 	    return -1;
 	}
 	fclose(fpcoords);
@@ -4024,7 +4011,7 @@ static int source_init_parameters(const char* physicsin, const char *source_dire
  */
 int compute_print_source(const char *physicsin, const char *source_directory_output,
     octree_t *myoctree, mesh_t *mymesh, numerics_info_t numericsinformation,
-    mpi_info_t mpiinformation, double globalDealyT, double surfaceShift)
+    mpi_info_t mpiinformation, double globalDealyT, double surfaceShift, UTMZone_t* utmZone)
 {
     /*Mesh related */
     myOctree = myoctree;
@@ -4054,7 +4041,7 @@ int compute_print_source(const char *physicsin, const char *source_directory_out
 
     if ( myID == 0 )
 	if ( source_init_parameters (physicsin, source_directory_output,
-	        globalDealyT, surfaceShift ) == -1 ) {
+	        globalDealyT, surfaceShift, utmZone) == -1 ) {
 	    fprintf(stdout,"Err init_source_parameters failed");
 	    ABORTEXIT;
 	}
@@ -4062,20 +4049,20 @@ int compute_print_source(const char *physicsin, const char *source_directory_out
     source_broadcast_parameters();
 
     if ( theTypeOfSource == POINT )
-	if ( compute_myForces_point(physicsin) == -1 ){
+	if ( compute_myForces_point(physicsin, utmZone) == -1 ){
 	    fprintf(stdout,"Err compute_myForces_point failed");
 	    ABORTEXIT;
 	}
 
     if (  theTypeOfSource == PLANE || theTypeOfSource == PLANEWITHKINKS )
-	if ( compute_myForces_planes(physicsin) == -1 ){
+	if ( compute_myForces_planes(physicsin, utmZone) == -1 ){
 	    fprintf(stdout,"Err compute_myForces_planes failed");
 	    ABORTEXIT;
 	}
 
     /* Standard Rupture Fault Hercules, variation of SRF by Graves */
     if(  theTypeOfSource == SRFH )
-	if( compute_myForces_srfh(physicsin )==-1){
+	if( compute_myForces_srfh(physicsin, utmZone)==-1){
 	    fprintf(stdout,"Err compute_myForces_srfh failed");
 	    ABORTEXIT;
 	}

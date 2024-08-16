@@ -220,7 +220,7 @@ int FilterSignal ( double *signal, int signalsize,
  */
 int compute_print_source (const char *physicsin, const char *source_directory_output,
     octree_t *myoctree, mesh_t *mymesh, numerics_info_t numericsinformation,
-    mpi_info_t mpiinformation, double globalDelayT, double surfaceShift);
+    mpi_info_t mpiinformation, double globalDelayT, double surfaceShift, UTMZone_t* utmZone);
 
 
 void update_forceinprocessor(int32_t iForce, char *inoutprocessor, int onoff);

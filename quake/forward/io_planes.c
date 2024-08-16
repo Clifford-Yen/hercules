@@ -57,7 +57,8 @@ int  New_planes_print(int32_t myID, mysolver_t* mySolver, int theNumberOfPlanes)
 void New_planes_setup(int32_t myID, int32_t *thePlanePrintRate, char *thePlaneDirOut, 
     int theNumberOfPlanes, const char *numericalin, 
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file);
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file,
+	UTMZone_t* utmZone);
 void New_planes_close(int32_t myID, int theNumberOfPlanes);
 void planes_IO_PES_main(int32_t myID);
 static void New_output_planes_construct_strips(int32_t myID, int theNumberOfPlanes);
@@ -68,7 +69,8 @@ int  Old_planes_print(int32_t myID, mysolver_t* mySolver, int theNumberOfPlanes)
 void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char* thePlaneDirOut, 
     int theNumberOfPlanes, const char *numericalin, 
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file);
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file,
+	UTMZone_t* utmZone);
 void Old_planes_close(int32_t myID, int theNumberOfPlanes);
 static int  Old_print_plane_displacements(int32_t myID, int ThisPlane);
 static void Old_output_planes_construct_strips(int32_t myID, int theNumberOfPlanes);
@@ -121,19 +123,20 @@ int planes_print(int32_t myID, int IO_pool_pe_count, int theNumberOfPlanes, myso
 void planes_setup(int32_t myID, int32_t *thePlanePrintRate, char *thePlaneDirOut, 
     int IO_pool_pe_count, int theNumberOfPlanes, const char *numericalin, 
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file){
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file,
+	UTMZone_t* utmZone){
 
 //	IO_pool_pe_count = 1;
     if (IO_pool_pe_count)
     New_planes_setup(myID, thePlanePrintRate, thePlaneDirOut, 
         theNumberOfPlanes, numericalin, 
         surfaceShift, theSurfaceCornersLong, theSurfaceCornersLat,
-        theDomainX, theDomainY, theDomainZ, planes_input_file);
+        theDomainX, theDomainY, theDomainZ, planes_input_file, utmZone);
     else
     Old_planes_setup(myID, thePlanePrintRate, thePlaneDirOut, 
         theNumberOfPlanes, numericalin, 
         surfaceShift, theSurfaceCornersLong, theSurfaceCornersLat,
-        theDomainX, theDomainY, theDomainZ, planes_input_file);
+        theDomainX, theDomainY, theDomainZ, planes_input_file, utmZone);
 }
 
 void planes_close(int32_t myID, int IO_pool_pe_count, int theNumberOfPlanes){
@@ -313,13 +316,13 @@ static int Old_print_plane_displacements(int32_t myID, int ThisPlane)
 void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *thePlaneDirOut,
     int theNumberOfPlanes, const char *numericalin,
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file) {
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file,
+	UTMZone_t* utmZone) {
 
     static const char* fname = "output_planes_setup()";
-    double     *auxiliar;
     char       planedisplacementsout[1024]; 
 	// char       planecoordsfile[1024];
-    int        iPlane, iCorner;
+    int        iPlane; 
     vector3D_t originPlaneCoords;
     int        largestplanesize;
     FILE*      fp;
@@ -338,16 +341,6 @@ void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *theP
 		solver_abort (fname, NULL, "Error parsing output_planes_print_rate field from %s\n",
 			      numericalin);
 	    }
-	auxiliar = (double *)malloc(sizeof(double)*8);
-	if ( parsedarray( fp, "domain_surface_corners", 8 ,auxiliar) !=0 ) {
-	    solver_abort (fname, NULL, "Error parsing domain_surface_corners field from %s\n",
-			  numericalin);
-	}
-	for ( iCorner = 0; iCorner < 4; iCorner++){
-	    theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
-	    theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
-	}
-	free(auxiliar);
 
 	thePlanes = (plane_t *) malloc ( sizeof( plane_t ) * theNumberOfPlanes);
 	if ( thePlanes == NULL ) {
@@ -398,11 +391,9 @@ void Old_planes_setup(int32_t myID, int32_t *thePlanePrintRate, const char *theP
 		    /* convert to cartesian refered to the mesh */
                     originPlaneCoords =
 			compute_domain_coords_linearinterp(
-							   thePlanes[ iPlane ].origincoords.x[1],
-							   thePlanes[ iPlane ].origincoords.x[0],
-							   theSurfaceCornersLong ,
-							   theSurfaceCornersLat,
-							   theDomainY, theDomainX );
+				thePlanes[ iPlane ].origincoords.x[1], thePlanes[ iPlane ].origincoords.x[0],
+				theSurfaceCornersLong, theSurfaceCornersLat,
+				theDomainY, theDomainX, utmZone);
 
                     thePlanes[iPlane].origincoords.x[0]=originPlaneCoords.x[0];
                     thePlanes[iPlane].origincoords.x[1]=originPlaneCoords.x[1];
@@ -763,11 +754,11 @@ void print_planeinfo(int32_t myID, int theNumberOfPlanes)
 void New_planes_setup(int32_t PENum, int32_t *thePlanePrintRate, char *thePlaneDirOut,
     int theNumberOfPlanes, const char *numericalin,
     double surfaceShift, double *theSurfaceCornersLong, double *theSurfaceCornersLat,
-    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file) {
+    double theDomainX, double theDomainY, double theDomainZ, char* planes_input_file,
+	UTMZone_t* utmZone) {
 
     static const char* fname = "new_output_planes_setup()";
-    double     *auxiliar;
-    int        iPlane, iCorner;
+    int        iPlane;
     vector3D_t originPlaneCoords;
     int largestplanesize;
     FILE*      fp;
@@ -786,16 +777,6 @@ void New_planes_setup(int32_t PENum, int32_t *thePlanePrintRate, char *thePlaneD
 		solver_abort (fname, NULL, "Error parsing output_planes_print_rate field from %s\n",
 			      numericalin);
 	    }
-	auxiliar = (double *)malloc(sizeof(double)*8);
-	if ( parsedarray( fp, "domain_surface_corners", 8 ,auxiliar) !=0 ) {
-	    solver_abort (fname, NULL, "Error parsing domain_surface_corners field from %s\n",
-			  numericalin);
-	}
-	for ( iCorner = 0; iCorner < 4; iCorner++){
-	    theSurfaceCornersLong[ iCorner ] = auxiliar [ iCorner * 2 ];
-	    theSurfaceCornersLat [ iCorner ] = auxiliar [ iCorner * 2 +1 ];
-	}
-	free(auxiliar);
 
 	thePlanes = (plane_t *) malloc ( sizeof( plane_t ) * theNumberOfPlanes);
 	if ( thePlanes == NULL ) {
@@ -843,11 +824,9 @@ void New_planes_setup(int32_t PENum, int32_t *thePlanePrintRate, char *thePlaneD
 		    /* convert to cartesian refered to the mesh */
                     originPlaneCoords =
 			compute_domain_coords_linearinterp(
-							   thePlanes[ iPlane ].origincoords.x[1],
-							   thePlanes[ iPlane ].origincoords.x[0],
-							   theSurfaceCornersLong ,
-							   theSurfaceCornersLat,
-							   theDomainY, theDomainX );
+				thePlanes[ iPlane ].origincoords.x[1], thePlanes[ iPlane ].origincoords.x[0],
+				theSurfaceCornersLong, theSurfaceCornersLat,
+				theDomainY, theDomainX, utmZone);
 
                     thePlanes[iPlane].origincoords.x[0]=originPlaneCoords.x[0];
                     thePlanes[iPlane].origincoords.x[1]=originPlaneCoords.x[1];

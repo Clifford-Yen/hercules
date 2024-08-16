@@ -98,7 +98,7 @@ static void read_parameters(int argc, char **argv);
 static int32_t parse_parameters(const char *numericalin);
 static void local_finalize(void);
 
-/** cvmrecord_t: cvm record.  Onlye used if USECVMDB not defined **/
+/** cvmrecord_t: cvm record.  Only used if USECVMDB not defined **/
 typedef struct cvmrecord_t
 {
     char key[12];
@@ -386,7 +386,7 @@ static struct Param_t
     double **basinData;
     double the3DVelocityModelLong;
     double the3DVelocityModelLat;
-
+    UTMZone_t utmZone;
 } Param = {
     .FourDOutFp = NULL,
     .theMonitorFileFp = NULL,
@@ -674,6 +674,45 @@ static void read_parameters(int argc, char **argv)
         }
         MPI_Bcast(&Param.basinData[0][0], 3*total_lines, MPI_DOUBLE, 0, comm_solver);
     }
+
+    #ifdef PROJ
+        /* Compute UTM Zone */
+        Param.utmZone = getUTMZone(Param.theRegionLat, Param.theRegionLong);
+        Param.utmZone.refPoint = convertLatLonToUTM(Param.theRegionLat, Param.theRegionLong, Param.utmZone.P);
+        /* Compute the corners of the surface */
+        /* NOTE: This is not necessary since the latitude and longitude of the 
+        corners (except the origin) are not used when the PROJ library is used.
+        But it can be printed for post-processing purposes. */
+        UTMCoordinates_t cornersUTM[4];
+        cornersUTM[0].n = Param.utmZone.refPoint.n;
+        cornersUTM[0].e = Param.utmZone.refPoint.e;
+        cornersUTM[1].n = cornersUTM[0].n + Param.theDomainX;
+        cornersUTM[1].e = cornersUTM[0].e;
+        cornersUTM[2].n = cornersUTM[0].n + Param.theDomainX;
+        cornersUTM[2].e = cornersUTM[0].e + Param.theDomainY;
+        cornersUTM[3].n = cornersUTM[0].n;
+        cornersUTM[3].e = cornersUTM[0].e + Param.theDomainY;
+        double lat, lon;
+        for (int iCorner = 0; iCorner < 4; iCorner++) {
+            convertUTMToLatLon(cornersUTM[iCorner], Param.utmZone.P, &lat, &lon);
+            Param.theSurfaceCornersLong[iCorner] = lon;
+            Param.theSurfaceCornersLat[iCorner] = lat;
+        }
+        /* Print the UTM Zone and the corners of the surface */
+        if (Global.myID == 0) {
+            printf("UTM Zone: %d%c\n", Param.utmZone.zone, Param.utmZone.hemisphere);
+            printf("UTM Reference Point (X-Northing, Y-Easting): %f, %f\n", Param.utmZone.refPoint.n, Param.utmZone.refPoint.e);
+            printf("UTM Corners:\n");
+            for (int iCorner = 0; iCorner < 4; iCorner++) {
+                printf(" %f, %f\n", cornersUTM[iCorner].n, cornersUTM[iCorner].e);
+            }
+            printf("Longitude and Latitude of the Corners:\n");
+            for (int iCorner = 0; iCorner < 4; iCorner++) {
+                printf(" %f, %f\n", Param.theSurfaceCornersLong[iCorner], Param.theSurfaceCornersLat[iCorner]);
+            }
+            printf("\n");
+        }
+    #endif
 
     return;
 }
@@ -1450,6 +1489,7 @@ static int32_t parse_parameters(const char *numericalin)
     createDir(Param.theSourceOutputDir, __FUNCTION_NAME);
 
     /* read domain corners */
+    #ifndef PROJ
     int iCorner;
     double *auxiliar;
     auxiliar = (double *)malloc(sizeof(double) * 8);
@@ -1467,6 +1507,7 @@ static int32_t parse_parameters(const char *numericalin)
         Param.theSurfaceCornersLat[iCorner] = auxiliar[iCorner * 2 + 1];
     }
     free(auxiliar);
+    #endif
 
     fclose(fp);
 
@@ -2090,21 +2131,27 @@ setrec(octant_t *leaf, double ticksize, void *data)
     if (Param.IstanbulVelocityModel == YES)
     {
         IstVelModel_origin = compute_domain_coords_linearinterp(28.675, 40.9565,
-                                                                Param.theSurfaceCornersLong,
-                                                                Param.theSurfaceCornersLat,
-                                                                Param.theDomainY, Param.theDomainX);
+            Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainY, Param.theDomainX, &Param.utmZone);
     }
     if (Param.basinVelocityModel == YES) {
         basinVelModel_origin = compute_domain_coords_linearinterp(Param.theBasinLong, Param.theBasinLat,
-                                                                Param.theSurfaceCornersLong,
-                                                                Param.theSurfaceCornersLat,
-                                                                Param.theDomainY, Param.theDomainX);
+            Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainY, Param.theDomainX, &Param.utmZone);
     }
     if (Param.threeDVelocityModel == YES) {
+        /* Aug 15, 2024 Update: This has been achieved by implementing PROJ. */
+        /* Clifford: TODO: We may need to change the way we calculate the origin 
+        in UTC by converting the latitude and longitude to UTM and then to the 
+        local coordinates for better accuracy. 
+        If we print DRM_southwest_x, DRM_southwest_y, x_coord, y_coord, etc., we 
+        will notice the left bottom corner coordinates of the domain is not (0, 0). 
+        That being said, all calculations using compute_domain_coords_linearinterp()
+        should be replaced with a latitude/longitude to UTM conversion and then to
+        local coordinates. */
         threeDVelModel_origin = compute_domain_coords_linearinterp(Param.the3DVelocityModelLong, Param.the3DVelocityModelLat,
-                                                                Param.theSurfaceCornersLong,
-                                                                Param.theSurfaceCornersLat,
-                                                                Param.theDomainY, Param.theDomainX);
+            Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainY, Param.theDomainX, &Param.utmZone);
     }
 
     /* Check for buildings and proceed according to the buildings setrec */
@@ -2143,6 +2190,7 @@ setrec(octant_t *leaf, double ticksize, void *data)
 
                 z_m = Global.theZForMeshOrigin + (leaf->lz + points[i_z] * halfticks) * ticksize;
 
+                /* Aug 15, 2024 Update: This should be addressed by implementing PROJ. */
                 // Clifford's NOTE: Try debugging. I realized that it's possible the point is outside the domain.
                 // But it seems like it's normal. oct_expand() will take care of the points outside the domain.
                 // ===== Print the coordinates of the point if it's outside the domain =====
@@ -7449,7 +7497,7 @@ source_init(const char *physicsin)
        load (force) the mesh */
         if (compute_print_source(physicsin, Param.theSourceOutputDir, 
             Global.myOctree, Global.myMesh, Global.theNumericsInformation, 
-            Global.theMPIInformation, globalDelayT, surfaceShift))
+            Global.theMPIInformation, globalDelayT, surfaceShift, &Param.utmZone))
         {
             monitor_print("Err:cannot create source forces");
             MPI_Abort(MPI_COMM_WORLD, ERROR);
@@ -7676,9 +7724,8 @@ read_stations_info(const char *numericalin)
         lon = auxiliar[iStation * 3 + 1];
         depth = auxiliar[iStation * 3 + 2];
         coords = compute_domain_coords_linearinterp(lon, lat,
-                                                    Param.theSurfaceCornersLong,
-                                                    Param.theSurfaceCornersLat,
-                                                    Param.theDomainY, Param.theDomainX);
+            Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainY, Param.theDomainX, &Param.utmZone);
         Param.theStationX[iStation] = coords.x[0];
         Param.theStationY[iStation] = coords.x[1];
         Param.theStationZ[iStation] = depth;
@@ -8479,21 +8526,18 @@ mesh_correct_properties(etree_t *cvm)
     if (Param.IstanbulVelocityModel == YES)
     {
         IstVelModel_origin = compute_domain_coords_linearinterp(28.675, 40.9565,
-                                                                Param.theSurfaceCornersLong,
-                                                                Param.theSurfaceCornersLat,
-                                                                Param.theDomainY, Param.theDomainX);
+            Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainY, Param.theDomainX, &Param.utmZone);
     }
     if (Param.basinVelocityModel == YES) {
         basinVelModel_origin = compute_domain_coords_linearinterp(Param.theBasinLong, Param.theBasinLat,
-                                                                Param.theSurfaceCornersLong,
-                                                                Param.theSurfaceCornersLat,
-                                                                Param.theDomainY, Param.theDomainX);
+            Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainY, Param.theDomainX, &Param.utmZone);
     }
     if (Param.threeDVelocityModel == YES) {
         threeDVelModel_origin = compute_domain_coords_linearinterp(Param.the3DVelocityModelLong, Param.the3DVelocityModelLat,
-                                                                Param.theSurfaceCornersLong,
-                                                                Param.theSurfaceCornersLat,
-                                                                Param.theDomainY, Param.theDomainX);
+            Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
+            Param.theDomainY, Param.theDomainX, &Param.utmZone);
     }
 
     if (Global.myID == 0)
@@ -9284,7 +9328,8 @@ int main(int argc, char **argv)
         planes_setup(Global.myID, &Param.thePlanePrintRate, Param.thePlaneDirOut, 
             Param.IO_pool_pe_count, Param.theNumberOfPlanes, Param.parameters_input_file, 
             get_surface_shift(), Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
-            Param.theDomainX, Param.theDomainY, Param.theDomainZ, Param.planes_input_file);
+            Param.theDomainX, Param.theDomainY, Param.theDomainZ, Param.planes_input_file,
+            &Param.utmZone);
     }
 
     /* Initialize the solver, source and output structures */

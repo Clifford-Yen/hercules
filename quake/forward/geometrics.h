@@ -19,6 +19,9 @@
 #ifndef GEOMETRICS_H
 #define GEOMETRICS_H
 
+#ifdef PROJ
+	#include <proj.h>
+#endif
 #include "psolve.h"
 
 
@@ -53,10 +56,30 @@ int compute_1D_grid( double cellSize, int numberOfCells, int pointsInCell,
 
 vector3D_t compute_domain_coords( vector3D_t point, double azimuth );
 
+// Define a structure to hold the UTM coordinates
+typedef struct {
+    double e; // Easting
+    double n; // Northing
+} UTMCoordinates_t;
+
+typedef struct {
+    int zone;
+    char hemisphere;
+	UTMCoordinates_t refPoint;
+	#ifdef PROJ
+		PJ *P;
+	#endif
+} UTMZone_t;
 
 vector3D_t
 compute_domain_coords_linearinterp(
 	double lon , double lat, double* longcorner, double *latcorner,
-	double domainlengthetha, double domainlengthcsi );
+	double domainlengthetha, double domainlengthcsi, UTMZone_t* utmZone);
+
+UTMZone_t getUTMZone(double latitude, double longitude);
+#ifdef PROJ
+	UTMCoordinates_t convertLatLonToUTM(double latitude, double longitude, PJ *P);
+	void convertUTMToLatLon(UTMCoordinates_t utmCoordinates, PJ *P, double *latitude, double *longitude);
+#endif
 
 #endif /* GEOMETRICS_H */
