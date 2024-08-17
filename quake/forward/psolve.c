@@ -2140,15 +2140,6 @@ setrec(octant_t *leaf, double ticksize, void *data)
             Param.theDomainY, Param.theDomainX, &Param.utmZone);
     }
     if (Param.threeDVelocityModel == YES) {
-        /* Aug 15, 2024 Update: This has been achieved by implementing PROJ. */
-        /* Clifford: TODO: We may need to change the way we calculate the origin 
-        in UTC by converting the latitude and longitude to UTM and then to the 
-        local coordinates for better accuracy. 
-        If we print DRM_southwest_x, DRM_southwest_y, x_coord, y_coord, etc., we 
-        will notice the left bottom corner coordinates of the domain is not (0, 0). 
-        That being said, all calculations using compute_domain_coords_linearinterp()
-        should be replaced with a latitude/longitude to UTM conversion and then to
-        local coordinates. */
         threeDVelModel_origin = compute_domain_coords_linearinterp(Param.the3DVelocityModelLong, Param.the3DVelocityModelLat,
             Param.theSurfaceCornersLong, Param.theSurfaceCornersLat,
             Param.theDomainY, Param.theDomainX, &Param.utmZone);

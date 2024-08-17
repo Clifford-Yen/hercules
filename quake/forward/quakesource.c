@@ -3897,14 +3897,9 @@ static int source_init_parameters(const char* physicsin, const char *source_dire
 
     hu_config_get_string_req(fp, "source_directory", &src_dir_p, &src_dir_len);
     strcpy(theSourceOutputDir, source_directory_output);
-    /* Update May 22, 2024: It's not because of the source output folder. Some 
-    settings (topo, 3D Velocity Model, with different damping types) would 
-    generate different results even if the folder is removed before running. 
-    Consider to reverse this "fix" or keep it since these files seem to be 
-    temporary files. */
-    /* Clifford's NOTE: If the source output directory exists, remove 
-    all files named "force_process.*" and "sourcedescription.out" as they affect 
-    the results of the simulation. The root cause is still being investigated. */
+    /* If the source output directory exists, remove all files named "force_process.*" 
+    and "sourcedescription.out" as they are the temporary files created by the source
+    generation process */
     snprintf(force_process_file, sizeof(force_process_file), "%s/force_process.*", theSourceOutputDir);
     snprintf(sourcedescription_file, sizeof(sourcedescription_file), "%s/sourcedescription.out", theSourceOutputDir);
     delete_files(force_process_file);
