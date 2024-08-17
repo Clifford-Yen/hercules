@@ -29,12 +29,12 @@
 %include the name of path to parameters between quotation marks i.e.
 %plot3d_Hercules('/Users/Desktop/parameters_for_matlab.in')
 
-
-function  plot3d_Hercules( path_to_parameters )
+function  plotmesh( path_to_parameters )
     %Parsing parameters from parameters_for_matlab.in
     fid = fopen(path_to_parameters, 'r');
     i=0;
-    temp_numbers=zeros(11,1);
+    temp_numbers = zeros(8,1);
+    temp_paths = cell(3,1);
     while 1
         i=i+1;
         tline = fgetl(fid);
@@ -42,9 +42,11 @@ function  plot3d_Hercules( path_to_parameters )
             break
         end
         if (i ~= 9 && i ~= 10 && i~=11)
-            [ temp_string temp_numbers(i) ] = strread(tline, ' %s %d ' , 'delimiter',':');
+            C = textscan(tline, '%s %d', 'delimiter',':');
+            temp_numbers(i) = C{2};
         else
-            [ temp_string temp_paths(i-8) ] = strread(tline, ' %s %s ' , 'delimiter',':');
+            C = textscan(tline, '%s %s', 'delimiter',':');
+            temp_paths(i-8) = C{2};
         end
         
     end
@@ -91,7 +93,7 @@ function  plot3d_Hercules( path_to_parameters )
     skip_bytes_per_data = total_bytes_per_data - data_byte_size;
 
     j = 0;    
-    for i = 0:number_processors-1,
+    for i = 0:number_processors-1
         mesh_coordinate_file = [directory_coord '/mesh_coordinates.' num2str(i)];
         if (exist(mesh_coordinate_file ,'file'))
             fid1 = fopen(mesh_coordinate_file);
@@ -115,7 +117,7 @@ function  plot3d_Hercules( path_to_parameters )
                 A = [A ; auxilary_coord];
             end
             fclose(fid1);
-            [row_size column_size] = size(auxilary_coord);
+            [row_size, column_size] = size(auxilary_coord);
             %Repeat same procedure for data matrix if necessaery
 
             if (plot_processors == 0)
@@ -152,7 +154,7 @@ function  plot3d_Hercules( path_to_parameters )
         end
     end
     
-    [r c]=size(A);
+    [r, c]=size(A);
     
     faces_matrix=[1 3 4 2;
     5 7 8 6;
@@ -162,7 +164,7 @@ function  plot3d_Hercules( path_to_parameters )
     6 8 4 2;];
     
     %If the coordinates are in the max and min limits.Comparasion with left corner coordinates
-    for i=1:r,
+    for i=1:r
         if( A(i,1) >= x_min && A(i,1) < x_max &&...
             A(i,2) >= y_min && A(i,2) < y_max &&...
             A(i,3) >= z_min && A(i,3) < z_max )
