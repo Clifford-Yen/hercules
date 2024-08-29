@@ -44,7 +44,8 @@
 static toposolver_t       *myTopoSolver;
 static int                ntp, np_ew, np_ns;
 static int8_t             theMaxoctlevel;
-static double             thebase_zcoord = 0.0, So, theDomainLong_ew, theDomainLong_ns, theMinTopoVol;
+static double             thebase_zcoord = 0.0, theDomainLong_ew, theDomainLong_ns, theMinTopoVol;
+static double             spacing_ew, spacing_ns;
 static double             *theTopoInfo;
 static etreetype_t        theEtreeType;
 static int32_t            myTopoElementsCount = 0;
@@ -348,7 +349,7 @@ int IsDampingElement (mesh_t *myMesh, int32_t eindex) {
             return YES;
         }
 
-    } /* for all topograhy elements */
+    } /* for all topography elements */
 
     return YES;
 }
@@ -394,21 +395,21 @@ void cross_product (vector3D_t v1, vector3D_t v2, vector3D_t *v3)
 
 /* distance from a point to a plane   */
 /* Note: zp and zo are measured with respect to the local z axis of the topography. i.e: m.a.s.l values  */
-double point_to_plane( double xp, double yp, double zp, double xo, double yo, double h, double zcoords[4] )
+double point_to_plane( double xp, double yp, double zp, double xo, double yo, double hx, double hy, double zcoords[4] )
 {
     double x1, y1, z1, mag, dist;
     vector3D_t V1, V2, V3, V4, N;
 
-    V1.x[0] = h;
+    V1.x[0] = hx;
     V1.x[1] = 0;
     V1.x[2] = zcoords[3] - zcoords[0];
 
     V2.x[0] = 0;
-    V2.x[1] = h;
+    V2.x[1] = hy;
     V2.x[2] = zcoords[1] - zcoords[0];
 
-    V3.x[0] = h;
-    V3.x[1] = h;
+    V3.x[0] = hx;
+    V3.x[1] = hy;
     V3.x[2] = zcoords[2] - zcoords[0];
 
     x1 = xp - xo;  /* relative distances with respect to the plane origin */
@@ -448,13 +449,13 @@ double point_to_plane( double xp, double yp, double zp, double xo, double yo, do
 }
 
 /* returns the zp coordinate of a point inside a plane using bi-linear interp   */
-double interp_z( double xp, double yp, double xo, double yo, double h, double zcoords[4] )
+double interp_z( double xp, double yp, double xo, double yo, double hx, double hy, double zcoords[4] )
 {
 
     double eta, psi, zp;
 
-    eta = 2.0 * ( xp - ( xo + h / 2.0 ) ) / h;
-    psi = 2.0 * ( yp - ( yo + h / 2.0 ) ) / h;
+    eta = 2.0 * ( xp - ( xo + hx / 2.0 ) ) / hx;
+    psi = 2.0 * ( yp - ( yo + hy / 2.0 ) ) / hy;
 
     zp  = 0.25 * ( ( 1.0 - eta ) * (1.0 - psi ) * zcoords[0] +
                    ( 1.0 - eta ) * (1.0 + psi ) * zcoords[1] +
@@ -476,8 +477,8 @@ double point_elevation ( double xo, double yo ) {
         xp = xo;
         yp = yo;
 
-        remi = modf(xp  / So, &x_o );
-        remj = modf(yp  / So, &y_o );
+        remi = modf(xp / spacing_ns, &x_o);
+        remj = modf(yp / spacing_ew, &y_o);
 
         /* Clifford's NOTE: As noted in setrec() function in psolve.c, some query 
         points may be outside of the domain, which makes negative values of x_o 
@@ -523,7 +524,8 @@ double point_elevation ( double xo, double yo ) {
                 printf("yp=%f\n", yp);
                 printf("remi=%f\n", remi);
                 printf("remj=%f\n", remj);
-                printf("So=%f\n", So);
+                printf("spacing_ew=%f\n", spacing_ew);
+                printf("spacing_ns=%f\n", spacing_ns);
             }
 
             mesh_cz[0] = theTopoInfo[np_ew * i + j];
@@ -539,7 +541,7 @@ double point_elevation ( double xo, double yo ) {
                 exit(1);
             }
 
-            zp = thebase_zcoord - interp_z(xp, yp, x_o*So, y_o*So, So, mesh_cz);
+            zp = thebase_zcoord - interp_z(xp, yp, x_o * spacing_ns, y_o * spacing_ew, spacing_ns, spacing_ew, mesh_cz);
         }
     }
     return zp;
@@ -559,10 +561,10 @@ double point_PlaneDist ( double xp, double yp, double zp )
 
     zp = thebase_zcoord - zp; /* sea level elevation  */
 
-	// remi = modf (xp  / So, &x_o );
-	// remj = modf (yp  / So, &y_o );
-	modf (xp  / So, &x_o );
-	modf (yp  / So, &y_o );
+	// remi = modf (xp  / spacing_ns, &x_o );
+	// remj = modf (yp  / spacing_ew, &y_o );
+	modf (xp  / spacing_ns, &x_o );
+	modf (yp  / spacing_ew, &y_o );
 
     /* Clifford's NOTE: see note in point_elevation() function */
     if (x_o < 0) {
@@ -590,7 +592,7 @@ double point_PlaneDist ( double xp, double yp, double zp )
     mesh_cz[1] =  theTopoInfo [ np_ew * i + j + 1 ];
     mesh_cz[2] =  theTopoInfo [ np_ew * ( i + 1 ) + j + 1 ];
     mesh_cz[3] =  theTopoInfo [ np_ew * ( i + 1 ) + j ];
-    dist = point_to_plane( xp, yp, zp, x_o*So, y_o*So, So, mesh_cz );
+    dist = point_to_plane( xp, yp, zp, x_o*spacing_ns, y_o*spacing_ew, spacing_ns, spacing_ew, mesh_cz );
 
     return dist;
 
@@ -1395,18 +1397,19 @@ topography_initparameters (const char *parametersin, const char *topo_dir) {
 	    return -1;
 	}
 
-	fscanf( fp_topo,   " %lf ", &So );
+    fscanf( fp_topo, "%lf", &spacing_ew);
+	fscanf( fp_topo, "%lf", &spacing_ns);
 
-	fract_np_ew = modf ( L_ew / So, &int_np_ew );
-	fract_np_ns = modf ( L_ns / So, &int_np_ns );
+	fract_np_ew = modf ( L_ew / spacing_ew, &int_np_ew );
+	fract_np_ns = modf ( L_ns / spacing_ns, &int_np_ns );
 
 	if ( ( fract_np_ew != 0) || ( fract_np_ns != 0 ) ) {
 	    fprintf(stderr, "Error opening topography file - NOT A REGULAR MESH \n" );
 	    return -1;
 	}
 
-	np_ew              = ( L_ew / So + 1 );
-	np_ns              = ( L_ns / So + 1 );
+	np_ew              = ( L_ew / spacing_ew + 1 );
+	np_ns              = ( L_ns / spacing_ns + 1 );
 	ntp                = np_ew * np_ns;
 	theTopoInfo        = (double*)malloc( sizeof(double) * ntp );
 
@@ -1432,7 +1435,7 @@ topography_initparameters (const char *parametersin, const char *topo_dir) {
 void topo_init (int32_t myID, const char *parametersin, const char *theTopoDir) {
 
     int     int_message[8];
-    double  double_message[5];
+    double  double_message[6];
 
     /* Capturing data from file --- only done by PE0 */
     if (myID == 0) {
@@ -1448,10 +1451,11 @@ void topo_init (int32_t myID, const char *parametersin, const char *theTopoDir) 
     /* Broadcasting data */
 
     double_message[0]    = thebase_zcoord;
-    double_message[1]    = So;
-    double_message[2]    = theDomainLong_ew;
-    double_message[3]    = theDomainLong_ns;
-    double_message[4]    = theMinTopoVol;
+    double_message[1]    = theDomainLong_ew;
+    double_message[2]    = theDomainLong_ns;
+    double_message[3]    = theMinTopoVol;
+    double_message[4]    = spacing_ew;
+    double_message[5]    = spacing_ns;
 
     int_message   [0]    = theMaxoctlevel;
     int_message   [1]    = ntp;
@@ -1462,14 +1466,15 @@ void topo_init (int32_t myID, const char *parametersin, const char *theTopoDir) 
     int_message   [6]    = (int)theNonlinTopo_flag;
     int_message   [7]    = (int)theTopoBKT_flag;
 
-    MPI_Bcast(double_message, 5, MPI_DOUBLE, 0, comm_solver);
+    MPI_Bcast(double_message, 6, MPI_DOUBLE, 0, comm_solver);
     MPI_Bcast(int_message,    8, MPI_INT,    0, comm_solver);
 
     thebase_zcoord       = double_message[0];
-    So				     = double_message[1];
-    theDomainLong_ew     = double_message[2];
-    theDomainLong_ns     = double_message[3];
-    theMinTopoVol        = double_message[4];
+    theDomainLong_ew     = double_message[1];
+    theDomainLong_ns     = double_message[2];
+    theMinTopoVol        = double_message[3];
+    spacing_ew           = double_message[4];
+    spacing_ns           = double_message[5];
 
     theMaxoctlevel       = int_message[0];
     ntp					 = int_message[1];
