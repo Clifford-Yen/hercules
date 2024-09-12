@@ -25,8 +25,7 @@
 /**
  * Macros with the format string for int64_t and uint64_t types.
  */
-#  define UINT64_FMT        "llu"
-#  define INT64_FMT     "lld"
-#  define MPI_INT64     MPI_LONG_LONG_INT
+#  define UINT64_FMT    PRIu64
+#  define INT64_FMT     PRId64
 
 #endif /* OCUTIL_H */

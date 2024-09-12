@@ -149,7 +149,7 @@ int main(int argc, char **argv)
     scantime = (endtime.tv_sec - starttime.tv_sec);
 
     printf("Dump the CVM database in %d seconds\n", scantime);
-    printf("Dump %qd octants\n", totalcount);
+    printf("Dump %"PRId64" octants\n", totalcount);
     printf("Output format is %s-endian", outformat);
     printf("Output file is %s\n", outputfile);
  

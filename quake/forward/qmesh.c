@@ -1117,7 +1117,7 @@ int main(int argc, char **argv)
 	}
 
 #else
-	fprintf(stdout, "Total      :    %10qd%10qd   %10qd\n\n",
+	fprintf(stdout, "Total      :    %10"PRId64"%10"PRId64"   %10"PRId64"\n\n",
 		etotal, ntotal, dntotal);
 	for (procid = 0; procid < theGroupSize; procid++) {
 	    fprintf(stdout, "Proc %5d:   %10d%10d   %10d\n", procid,

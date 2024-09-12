@@ -58,7 +58,7 @@ int main(int argc, char **argv)
     }
 
 
-    sscanf(argv[3], "%qd", &offset);
+    sscanf(argv[3], "%"PRId64, &offset);
 
 
 #ifdef BIGBEN

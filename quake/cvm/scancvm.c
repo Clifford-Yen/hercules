@@ -85,7 +85,7 @@ int main(int argc, char **argv)
 
     scantime = (endtime.tv_sec - starttime.tv_sec);
     printf("Scanned the CVM database in %d seconds\n", scantime);
-    printf("Scanned %qd octants\n", totalcount);
+    printf("Scanned %"PRId64" octants\n", totalcount);
  
     etree_close(cvmEp);
 

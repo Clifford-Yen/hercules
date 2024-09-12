@@ -1606,6 +1606,9 @@ static int32_t parse_parameters(const char *numericalin)
     monitor_print("Include Istanbul Velocity model:    %s\n", IstanbulModel);
     monitor_print("Include Basin Velocity model:       %s\n", basinModel);
     monitor_print("Include 3D Velocity model:          %s\n", threeDModel);
+    #ifdef PROJ
+    monitor_print("Use PROJ library:                   yes\n");
+    #endif
     if (typeOfDamping >= BKT) {
         monitor_print("Use Parametric Q factor:            %s\n", use_parametricq);
         if (have_parametricq == YES) {
@@ -8385,7 +8388,7 @@ output_init_parameters(const char *numericalin, output_parameters_t *params)
     values[3] = params->output_debug;
 
     MPI_Bcast(values, VALUES_COUNT, MPI_INT, 0, comm_solver);
-    MPI_Bcast(&params->total_nodes, 1, MPI_INT64, 0, comm_solver);
+    MPI_Bcast(&params->total_nodes, 1, MPI_INT64_T, 0, comm_solver);
 
     params->parallel_output = values[0];
     params->output_displacement = values[1];

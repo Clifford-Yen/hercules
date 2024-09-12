@@ -43,13 +43,10 @@
  * before defining them.
  */
 #ifndef UINT64_FMT
-#  define UINT64_FMT		"llu"
+#  define UINT64_FMT	PRIu64
 #endif
 #ifndef INT64_FMT
-#  define INT64_FMT		"lld"
-#endif
-#ifndef MPI_INT64
-#  define MPI_INT64		MPI_LONG_LONG_INT
+#  define INT64_FMT		PRId64
 #endif
 
 #if (defined _FILE_OFFSET_BITS) && (_FILE_OFFSET_BITS == 64)

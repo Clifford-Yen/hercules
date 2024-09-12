@@ -758,19 +758,19 @@ block_validate( int64_t low, int64_t high, int64_t block_size, int64_t n,
 
     /* check block size */
     if (block_size < 0 || block_size > max_block_size) {
-        fprintf(stderr, "%s: invalid block size = %lld\n", fn_name, block_size);
+        fprintf(stderr, "%s: invalid block size = %"PRId64"\n", fn_name, block_size);
         ret = -1;
     }
 
     /* check low id */
     if (low < 0 || low >= n) {
-        fprintf( stderr, "%s: invalid low id = %lld\n", fn_name, low );
+        fprintf( stderr, "%s: invalid low id = %"PRId64"\n", fn_name, low );
         ret = -1;
     }
 
     /* check high id */
     if (high < 0 || high >= n) {
-        fprintf( stderr, "%s: invalid high id = %lld\n", fn_name, high );
+        fprintf( stderr, "%s: invalid high id = %"PRId64"\n", fn_name, high );
         ret = -1;
     }
 
@@ -1980,7 +1980,7 @@ octor_getleavescount(const octree_t* octree, int where)
 		return lcount;
 	} else {
 		if (tree->groupsize > 1) {
-			MPI_Allreduce(&lcount, &gcount, 1, MPI_INT64, MPI_SUM, tree->comm_tree);
+			MPI_Allreduce(&lcount, &gcount, 1, MPI_INT64_T, MPI_SUM, tree->comm_tree);
 			return gcount;
 		} else {
 			return lcount;
@@ -1999,7 +1999,7 @@ octor_getminleavescount(const octree_t* octree, int where)
 		return lcount;
 	} else {
 		if (tree->groupsize > 1) {
-			MPI_Allreduce(&lcount, &gcount, 1, MPI_INT64, MPI_MIN, tree->comm_tree);
+			MPI_Allreduce(&lcount, &gcount, 1, MPI_INT64_T, MPI_MIN, tree->comm_tree);
 			return gcount;
 		} else {
 			return lcount;
@@ -2018,7 +2018,7 @@ octor_getmaxleavescount(const octree_t* octree, int where)
 		return lcount;
 	} else {
 		if (tree->groupsize > 1) {
-			MPI_Allreduce(&lcount, &gcount, 1, MPI_INT64, MPI_MAX, tree->comm_tree);
+			MPI_Allreduce(&lcount, &gcount, 1, MPI_INT64_T, MPI_MAX, tree->comm_tree);
 			return gcount;
 		} else {
 			return lcount;
@@ -5031,7 +5031,7 @@ octor_partitiontree(octree_t *octree, bldgs_nodesearch_com_t *bldgs_nodesearch_c
         		/* Out of memory */
         		fprintf( stderr,
                          "PE %d: %s %d: out of memory\n"
-                         "Allocating %d bytes for %lld elements\n"
+                         "Allocating %d bytes for %"PRId64" elements\n"
                          "Total memory allocated by Octor : %d bytes\n",
                          tree->procid, __FILE__, __LINE__,
                          rcvbytesize, intersectcount,
