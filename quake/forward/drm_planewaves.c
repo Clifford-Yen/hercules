@@ -1675,6 +1675,17 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     x_grid_ID = floor((x_input - xmin) / x_spacing);
     y_grid_ID = floor((y_input - ymin) / y_spacing);
 
+    /* For edge cases. In theory, y_input <= ymax should catch this case and 
+    return -1. However, due to floating point precision, it is possible that 
+    y_input and ymax are the same but the system just couldn't catch it. */
+    if (y_grid_ID == Params_soil.numPointY - 1) {
+        return -1;
+        /* TODO: returning -1 makes sure the program behaves the same across 
+        different machines. However, instead of returning -1, should we just 
+        set y_grid_ID as follows? */
+        // y_grid_ID--;
+    }
+
     Rec_node_ID[0] = Params_soil.numPointX * y_grid_ID + x_grid_ID;
     Rec_node_ID[1] = Params_soil.numPointX * y_grid_ID + (x_grid_ID + 1);
     Rec_node_ID[2] = Params_soil.numPointX * (y_grid_ID + 1) + (x_grid_ID + 1);
@@ -1720,6 +1731,11 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
         } else { // Rec_node_ID[i]+1 > Params_soil.numLayerID, this should never happen
             fprintf(stderr, "Error: Rec_node_ID[i]+1 > Params_soil.numLayerID\n"
                 "Rec_node_ID[%d] = %d, Params_soil.numLayerID = %d\n", i, Rec_node_ID[i], Params_soil.numLayerID);
+            fprintf(stderr, "x_min: %lf, x_max: %lf, y_min: %lf, y_max: %lf\n", xmin, xmax, ymin, ymax);
+            fprintf(stderr, "x_input: %lf, y_input: %lf, z_input: %lf\n", x_input, y_input, z_input);
+            fprintf(stderr, "x_grid_ID: %d, y_grid_ID: %d\n", x_grid_ID, y_grid_ID);
+            fprintf(stderr, "Rec_node_ID[0]: %d, Rec_node_ID[1]: %d, Rec_node_ID[2]: %d, Rec_node_ID[3]: %d\n",
+                Rec_node_ID[0], Rec_node_ID[1], Rec_node_ID[2], Rec_node_ID[3]);
             MPI_Abort(MPI_COMM_WORLD, ERROR);
             exit(1);
         }

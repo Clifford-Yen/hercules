@@ -19,7 +19,8 @@
 -include $(WORKDIR)/user.mk
 
 ifndef SYSTEM
-	SYSTEM = Stampede3
+	SYSTEM := $(shell uname -s | tr A-Z a-z)
+	ARCH = $(shell uname -m | tr A-Z a-z)
 endif
 
 ifeq ($(SYSTEM), Stampede)
@@ -232,28 +233,6 @@ ifeq ($(SYSTEM), HOOKE)
 	CPPFLAGS    += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 endif
 
-ifeq ($(SYSTEM), MACBOOK)
-	MPI_DIR      = /usr/
-	MPI_INCLUDE  = $(MPI_DIR)/include/openmpi/ompi/mpi/cxx
-	CC           = $(MPI_DIR)/local/bin/mpicc
-	CXX          = $(MPI_DIR)/local/bin/mpicxx
-	LD           = $(MPI_DIR)/local/bin/mpicxx
-	CXXFLAGS    += -DMPICH_IGNORE_CXX_SEEK
-	CFLAGS      += -Wall
-	CPPFLAGS    += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
-endif
- 
-ifeq ($(SYSTEM), MAVERICKS)
-	MPI_DIR      = /opt/local/
-	MPI_INCLUDE  = $(MPI_DIR)/include/openmpi-mp/openmpi/ompi/mpi/cxx
-	CC           = $(MPI_DIR)/bin/mpicc-openmpi-mp
-	CXX          = $(MPI_DIR)/bin/mpicxx-openmpi-mp
-	LD           = $(MPI_DIR)/bin/mpicxx-openmpi-mp
-	CXXFLAGS    += -DMPICH_IGNORE_CXX_SEEK
-	CFLAGS      += -Wall
-	CPPFLAGS    += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
-endif
-
 
 # Configuration for Hoffman2 Cluster at UCLA
 ifeq ($(SYSTEM), Hoffman2)
@@ -265,4 +244,33 @@ ifeq ($(SYSTEM), Hoffman2)
 	CXXFLAGS   += -DMPICH_IGNORE_CXX_SEEK
 	CPPFLAGS   += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 	LDFLAGS    += -lgslcblas -lgsl
+endif
+
+
+# Configurations for Intel Macs and Arm Macs
+ifeq ($(SYSTEM), darwin)
+	CFLAGS += -g -ggdb
+	IO_CPPFLAGS = -DUSECVMDB -DSCEC  -DPROCPERNODE=4
+	ifeq ($(ARCH), arm64)
+		MPI_DIR      = /opt/homebrew
+		MPI_INCLUDE  = $(MPI_DIR)/include/
+		CC           = $(MPI_DIR)/bin/mpicc
+		CXX          = $(MPI_DIR)/bin/mpicxx
+		LD           = $(MPI_DIR)/bin/mpicxx
+		CXXFLAGS    += -DMPICH_IGNORE_CXX_SEEK
+		CFLAGS      += -Wall -I$(MPI_DIR)/include/
+		CPPFLAGS    += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
+		LDFLAGS     += -L$(MPI_DIR)/lib/
+	else ifeq ($(ARCH), x86_64)
+		MPI_DIR      = /usr/local/
+		MPI_INCLUDE  = $(MPI_DIR)/include/openmpi/ompi/mpi/cxx
+		CC           = $(MPI_DIR)/bin/mpicc
+		CXX          = $(MPI_DIR)/bin/mpicxx
+		LD           = $(MPI_DIR)/bin/mpicxx
+		CXXFLAGS    += -DMPICH_IGNORE_CXX_SEEK
+		CFLAGS      += -Wall
+		CPPFLAGS    += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
+		LDFLAGS     += /usr/local/lib/libgsl.a
+	endif
+	LDFLAGS += -lgslcblas -lgsl
 endif
