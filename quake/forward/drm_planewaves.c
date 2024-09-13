@@ -1668,23 +1668,12 @@ int getMaterialFrom3DVelocityModel(double x_input, double y_input, double z_inpu
     Istanbul model works. But whether an allowable z range should be introduced 
     is something to be discussed. */
     // if (!(x_input >= xmin && x_input <= xmax && y_input >= ymin && y_input <= ymax && z_input <= 300.0)) {
-    if (!(x_input >= xmin && x_input <= xmax && y_input >= ymin && y_input <= ymax)) {
+    if (!(x_input >= xmin && x_input < xmax && y_input >= ymin && y_input < ymax)) {
         return -1;
     }
 
     x_grid_ID = floor((x_input - xmin) / x_spacing);
     y_grid_ID = floor((y_input - ymin) / y_spacing);
-
-    /* For edge cases. In theory, y_input <= ymax should catch this case and 
-    return -1. However, due to floating point precision, it is possible that 
-    y_input and ymax are the same but the system just couldn't catch it. */
-    if (y_grid_ID == Params_soil.numPointY - 1) {
-        return -1;
-        /* TODO: returning -1 makes sure the program behaves the same across 
-        different machines. However, instead of returning -1, should we just 
-        set y_grid_ID as follows? */
-        // y_grid_ID--;
-    }
 
     Rec_node_ID[0] = Params_soil.numPointX * y_grid_ID + x_grid_ID;
     Rec_node_ID[1] = Params_soil.numPointX * y_grid_ID + (x_grid_ID + 1);
