@@ -1992,7 +1992,7 @@ int getIstanbulMaterial(cvmpayload_t *g_props, vector3D_t IstVelModel_origin, do
     y_rel = 388500.00 + y_m - IstVelModel_origin.x[1];
 
     int res = material_property_relative_V10_local(y_rel, x_rel, -z_m, output, IstVelModel_origin.x[1], IstVelModel_origin.x[0]);
-    g_props->Qs = 7.17 + output[0] * 0.0276; // Same simple expression as in la Habra runs
+    g_props->Qs = output[0] * 0.1; // Same simple expression as in la Habra runs
     g_props->Qp = 2.0 * g_props->Qs;
 
     if (res != 0) {
@@ -8656,7 +8656,10 @@ mesh_correct_properties(etree_t *cvm)
 
                         //edata->nl_id = output[3];
 			
-			edata->nl_id = 1.0;
+                        // NOTE: There are multiple nonlinear models in Hercules (check nonlinear.c).
+                        // You may want to modify the following line if you want to use other nonlinear models.
+                        // Note that if nl_id == 0, the element will be linear.
+			            edata->nl_id = 1.0;
 
                         s_0 = edata->edgesize / 2.0 * edata->rho * 9.81;
                         for (k = 0; k < nlayers; k++)
