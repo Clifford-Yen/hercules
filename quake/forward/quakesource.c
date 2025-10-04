@@ -3058,6 +3058,7 @@ fill_point_source_coordinates(ptsrc_t* ps, UTMZone_t* utmZone)
 	ps->domainCoords.x[0] = theHypocenterLatDeg;
 	ps->domainCoords.x[1] = theHypocenterLongDeg;
 	ps->domainCoords.x[2] = theHypocenterDepthM;
+	ps->domainCoords.x[2] += point_elevation ( ps->domainCoords.x[0], ps->domainCoords.x[1] );
     }
 
 
@@ -3081,6 +3082,8 @@ fill_point_source_coordinates(ptsrc_t* ps, UTMZone_t* utmZone)
 	  exit(1); */
 
 	ps->domainCoords.x[2] = theHypocenterDepthM;
+	ps->domainCoords.x[2] += point_elevation ( ps->domainCoords.x[0], ps->domainCoords.x[1] );
+
 
     }
 }
